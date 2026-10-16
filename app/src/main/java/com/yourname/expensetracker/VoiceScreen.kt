@@ -77,21 +77,17 @@ import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
 import java.io.ByteArrayOutputStream
 
-/**
- * Full-screen Voice Screen overlay powered by Soniox STT via Firebase Cloud Functions,
- * displaying high-accuracy transcripts and structured transaction parsed cards.
- * Transcribed text is parsed by Gemini (via Firebase) into one or more transactions.
- */
 @Composable
 fun VoiceScreen(
     onCloseClick: () -> Unit,
-    onSaveTransaction: (Expense) -> Unit = {}
+    existingExpenses: List<Expense> = emptyList(),
+    onSaveTransaction: (Expense) -> Unit = {},
+    onUpdateTransaction: (Expense) -> Unit = {}
 ) {
     val context = LocalContext.current
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Helpers copied directly from Amatyaa STT architecture
     val androidAudioRecorder = remember { AndroidAudioRecorder(context) }
     val audioBuffer = remember { ByteArrayOutputStream() }
 
@@ -100,9 +96,8 @@ fun VoiceScreen(
     var isSonioxProcessing by remember { mutableStateOf(false) }
     var sonioxTranscript by remember { mutableStateOf("") }
     var sonioxError by remember { mutableStateOf<String?>(null) }
-    var parsedTransactions by remember { mutableStateOf<List<Expense>>(emptyList()) }
+    var parsedResults by remember { mutableStateOf<List<ParsedVoiceResult>>(emptyList()) }
 
-    // Release resources on screen close
     DisposableEffect(Unit) {
         onDispose {
             recordingJob?.cancel()
@@ -110,7 +105,6 @@ fun VoiceScreen(
         }
     }
 
-    // Permission state tracking
     var hasMicPermission by remember {
         mutableStateOf(
             ContextCompat.checkSelfPermission(
@@ -120,14 +114,13 @@ fun VoiceScreen(
         )
     }
 
-    // Permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         hasMicPermission = isGranted
         if (isGranted) {
             sonioxTranscript = ""
-            parsedTransactions = emptyList()
+            parsedResults = emptyList()
             sonioxError = null
             isSonioxProcessing = false
             isRecording = true
@@ -150,7 +143,7 @@ fun VoiceScreen(
     fun startListeningFlow() {
         if (hasMicPermission) {
             sonioxTranscript = ""
-            parsedTransactions = emptyList()
+            parsedResults = emptyList()
             sonioxError = null
             isSonioxProcessing = false
             isRecording = true
@@ -186,13 +179,12 @@ fun VoiceScreen(
                 if (result.isSuccess) {
                     val text = result.getOrNull() ?: ""
 
-                    // Gemini parsing (supports multiple transactions, Hindi/English).
-                    // Falls back to the old local parser if Gemini fails.
-                    val aiParsed = SonioxFirebaseHelper.parseTransactions(text).getOrNull()
-                    parsedTransactions = if (!aiParsed.isNullOrEmpty()) {
+                    val aiParsed = SonioxFirebaseHelper.parseTransactions(text, existingExpenses).getOrNull()
+                    parsedResults = if (!aiParsed.isNullOrEmpty()) {
                         aiParsed
                     } else {
-                        listOfNotNull(VoiceTransactionParser.parse(text))
+                        val fallback = VoiceTransactionParser.parse(text)
+                        if (fallback != null) listOf(ParsedVoiceResult(fallback, isUpdate = false)) else emptyList()
                     }
 
                     sonioxTranscript = text
@@ -206,12 +198,10 @@ fun VoiceScreen(
         }
     }
 
-    // Auto-start recording on open
     LaunchedEffect(Unit) {
         startListeningFlow()
     }
 
-    // Pulsing animation when listening
     val infiniteTransition = rememberInfiniteTransition(label = "pulseTransition")
 
     val pulseScale by infiniteTransition.animateFloat(
@@ -255,7 +245,6 @@ fun VoiceScreen(
                 .padding(innerPadding)
                 .padding(20.dp)
         ) {
-            // Close Button
             IconButton(
                 onClick = onCloseClick,
                 modifier = Modifier
@@ -270,7 +259,6 @@ fun VoiceScreen(
                 )
             }
 
-            // Center Column Content
             Column(
                 modifier = Modifier
                     .align(Alignment.Center)
@@ -279,7 +267,6 @@ fun VoiceScreen(
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                // Mic Button
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -333,7 +320,6 @@ fun VoiceScreen(
 
                 Spacer(modifier = Modifier.height(24.dp))
 
-                // STATUS / INSTRUCTION TEXT
                 when {
                     !hasMicPermission -> {
                         Text(
@@ -359,13 +345,13 @@ fun VoiceScreen(
 
                     isSonioxProcessing -> {
                         Text(
-                            text = "Transcribing with Soniox Cloud AI...",
+                            text = "Processing voice...",
                             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.primary
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = "Securely processing audio through Firebase",
+                            text = "Transcribing with Soniox & Gemini AI",
                             style = MaterialTheme.typography.bodySmall,
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
                         )
@@ -379,7 +365,7 @@ fun VoiceScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Try saying: \"Spent 4100 on EMI on 2nd October\"",
+                            text = "Try: \"Change 1st October salary to 52,500\"",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                             textAlign = TextAlign.Center
@@ -419,7 +405,6 @@ fun VoiceScreen(
                     }
                 }
 
-                // RECOGNIZED TEXT & PARSED TRANSACTION CARD
                 if (sonioxTranscript.isNotEmpty() && !isSonioxProcessing) {
                     Spacer(modifier = Modifier.height(24.dp))
 
@@ -436,13 +421,11 @@ fun VoiceScreen(
                                 .padding(18.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                Text(
-                                    text = "Soniox AI Transcript:",
-                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
-                                    color = MaterialTheme.colorScheme.primary
-                                )
-                            }
+                            Text(
+                                text = "Transcript:",
+                                style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                color = MaterialTheme.colorScheme.primary
+                            )
 
                             Spacer(modifier = Modifier.height(6.dp))
 
@@ -455,8 +438,10 @@ fun VoiceScreen(
                                 textAlign = TextAlign.Center
                             )
 
-                            // PARSED TRANSACTION DETAILS (one card per detected transaction)
-                            parsedTransactions.forEach { parsedTransaction ->
+                            parsedResults.forEach { resultItem ->
+                                val parsedTransaction = resultItem.expense
+                                val isUpdate = resultItem.isUpdate
+
                                 Spacer(modifier = Modifier.height(16.dp))
 
                                 Card(
@@ -475,16 +460,20 @@ fun VoiceScreen(
                                     ) {
                                         Column(modifier = Modifier.weight(1f)) {
                                             Row(verticalAlignment = Alignment.CenterVertically) {
-                                                val typeLabel = if (parsedTransaction.type == TransactionType.INCOME) "INCOME" else "EXPENSE"
-                                                val typeColor = if (parsedTransaction.type == TransactionType.INCOME) Color(0xFF2E7D32) else MaterialTheme.colorScheme.error
+                                                val (typeLabel, typeColor) = when (parsedTransaction.type) {
+                                                    TransactionType.LENT -> Pair("LENT", Color(0xFF43A047))
+                                                    TransactionType.BORROWED -> Pair("BORROWED", Color(0xFFE53935))
+                                                    TransactionType.INCOME -> Pair("INCOME", Color(0xFF2E7D32))
+                                                    TransactionType.EXPENSE -> Pair("EXPENSE", MaterialTheme.colorScheme.error)
+                                                }
 
                                                 Text(
-                                                    text = typeLabel,
+                                                    text = if (isUpdate) "UPDATE $typeLabel" else typeLabel,
                                                     style = MaterialTheme.typography.labelSmall.copy(fontWeight = FontWeight.Bold),
-                                                    color = typeColor,
+                                                    color = if (isUpdate) Color(0xFFFF9800) else typeColor,
                                                     modifier = Modifier
                                                         .clip(RoundedCornerShape(6.dp))
-                                                        .background(typeColor.copy(alpha = 0.15f))
+                                                        .background((if (isUpdate) Color(0xFFFF9800) else typeColor).copy(alpha = 0.15f))
                                                         .padding(horizontal = 6.dp, vertical = 2.dp)
                                                 )
 
@@ -499,18 +488,25 @@ fun VoiceScreen(
 
                                             Spacer(modifier = Modifier.height(4.dp))
 
+                                            val displayTitle = if (parsedTransaction.personName.isNotBlank()) {
+                                                parsedTransaction.personName
+                                            } else {
+                                                parsedTransaction.title
+                                            }
+
                                             Text(
-                                                text = parsedTransaction.title,
+                                                text = displayTitle,
                                                 style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                                 color = MaterialTheme.colorScheme.onSurface
                                             )
                                         }
 
-                                        val formatted = SettingsManager.formatAmount(parsedTransaction.amount)
-                                        val amountColor = if (parsedTransaction.type == TransactionType.INCOME) Color(0xFF2E7D32) else MaterialTheme.colorScheme.onSurface
+                                        val isPositive = parsedTransaction.type == TransactionType.INCOME || parsedTransaction.type == TransactionType.LENT
+                                        val amountColor = if (isPositive) Color(0xFF2E7D32) else Color(0xFFE53935)
+                                        val prefix = if (isPositive) "+" else "-"
 
                                         Text(
-                                            text = if (parsedTransaction.type == TransactionType.INCOME) "+$formatted" else formatted,
+                                            text = "$prefix${SettingsManager.formatAmount(parsedTransaction.amount)}",
                                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                                             color = amountColor
                                         )
@@ -520,7 +516,6 @@ fun VoiceScreen(
 
                             Spacer(modifier = Modifier.height(16.dp))
 
-                            // ACTION BUTTONS: "Try again" & "Save Transaction"
                             Row(
                                 modifier = Modifier.fillMaxWidth(),
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
@@ -541,8 +536,18 @@ fun VoiceScreen(
 
                                 Button(
                                     onClick = {
-                                        if (parsedTransactions.isNotEmpty()) {
-                                            parsedTransactions.forEach { onSaveTransaction(it) }
+                                        if (parsedResults.isNotEmpty()) {
+                                            try {
+                                                parsedResults.forEach { item ->
+                                                    if (item.isUpdate) {
+                                                        onUpdateTransaction(item.expense)
+                                                    } else {
+                                                        onSaveTransaction(item.expense)
+                                                    }
+                                                }
+                                            } catch (e: Exception) {
+                                                e.printStackTrace()
+                                            }
                                         } else {
                                             coroutineScope.launch {
                                                 snackbarHostState.showSnackbar("Could not detect amount. Please try again.")
@@ -561,7 +566,7 @@ fun VoiceScreen(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text(if (parsedTransactions.size > 1) "Save all" else "Save")
+                                    Text(if (parsedResults.size > 1) "Confirm all" else "Confirm")
                                 }
                             }
                         }
@@ -572,9 +577,6 @@ fun VoiceScreen(
     }
 }
 
-/**
- * Helper to open Android app settings page.
- */
 private fun openAppSettings(context: Context) {
     val intent = Intent(Settings.ACTION_APPLICATION_DETAILS_SETTINGS).apply {
         data = Uri.fromParts("package", context.packageName, null)

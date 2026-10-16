@@ -9,17 +9,18 @@ import java.util.Locale
 import java.util.UUID
 
 /**
- * Helper class to invoke Firebase Cloud Functions for Soniox transcription and Gemini parsing.
+ * Wraps parsed transactions and distinguishes new entries from existing modifications.
  */
+data class ParsedVoiceResult(
+    val expense: Expense,
+    val isUpdate: Boolean
+)
+
 object SonioxFirebaseHelper {
 
     private val functions: FirebaseFunctions
         get() = FirebaseFunctions.getInstance()
 
-    /**
-     * Sends Base64 encoded audio bytes to Firebase Cloud Function 'transcribeVoice',
-     * which calls Soniox REST API securely.
-     */
     suspend fun transcribeAudio(
         audioBytes: ByteArray,
         mimeType: String = "audio/m4a"
@@ -51,16 +52,40 @@ object SonioxFirebaseHelper {
         }
     }
 
-    /**
-     * Sends transcribed text to Firebase Cloud Function 'parseTransactions' (Gemini)
-     * and returns a list of structured transactions (can be more than one).
-     */
-    suspend fun parseTransactions(spokenText: String): Result<List<Expense>> {
+    suspend fun parseTransactions(
+        spokenText: String,
+        recentExpenses: List<Expense> = emptyList()
+    ): Result<List<ParsedVoiceResult>> {
         return try {
             val isoFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+            val displayFormatStandard = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
+            val monthYearFormat = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
+
+            // Prepare candidate transactions for Gemini
+            val candidateList = recentExpenses.take(40).map { exp ->
+                val isoDate = try {
+                    val parsed = displayFormatStandard.parse(exp.date)
+                        ?: SimpleDateFormat("d MMM yyyy", Locale.getDefault()).parse(exp.date)
+                    if (parsed != null) isoFormat.format(parsed) else exp.date
+                } catch (e: Exception) {
+                    exp.date
+                }
+
+                hashMapOf(
+                    "id" to exp.id,
+                    "title" to exp.title,
+                    "amount" to exp.amount,
+                    "category" to exp.category,
+                    "date" to isoDate,
+                    "type" to exp.type.name,
+                    "personName" to exp.personName
+                )
+            }
+
             val data = hashMapOf(
                 "text" to spokenText,
-                "today" to isoFormat.format(Date())
+                "today" to isoFormat.format(Date()),
+                "recentTransactions" to candidateList
             )
 
             val result = functions
@@ -71,25 +96,40 @@ object SonioxFirebaseHelper {
             val resultMap = result.data as? Map<*, *>
             val rawEntries = resultMap?.get("entries") as? List<*> ?: emptyList<Any>()
 
-            val displayFormat = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
-            val monthYearFormat = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
-
-            val expenses = rawEntries.mapNotNull { item ->
+            val parsedResults = rawEntries.mapNotNull { item ->
                 val m = item as? Map<*, *> ?: return@mapNotNull null
                 val amount = (m["amount"] as? Number)?.toDouble() ?: return@mapNotNull null
                 if (amount <= 0.0) return@mapNotNull null
 
-                val type = if ((m["type"] as? String)?.uppercase() == "INCOME") {
-                    TransactionType.INCOME
-                } else {
-                    TransactionType.EXPENSE
+                val action = (m["action"] as? String)?.uppercase() ?: "CREATE"
+                val matchedId = (m["id"] as? String)?.trim().orEmpty()
+                val isUpdate = action == "UPDATE" && matchedId.isNotBlank()
+
+                val typeStr = (m["type"] as? String)?.uppercase()
+                val type = when (typeStr) {
+                    "LENT" -> TransactionType.LENT
+                    "BORROWED" -> TransactionType.BORROWED
+                    "INCOME" -> TransactionType.INCOME
+                    else -> TransactionType.EXPENSE
                 }
 
-                val allowedCategories = if (type == TransactionType.INCOME) incomeCategories else expenseCategories
-                val rawCategory = m["category"] as? String ?: "Other"
-                val category = allowedCategories.firstOrNull { it.equals(rawCategory, ignoreCase = true) } ?: "Other"
+                val personName = (m["personName"] as? String)?.trim() ?: ""
 
-                val title = (m["title"] as? String)?.trim().takeUnless { it.isNullOrBlank() } ?: category
+                val category = when (type) {
+                    TransactionType.LENT -> "Lending"
+                    TransactionType.BORROWED -> "Borrowing"
+                    TransactionType.INCOME -> {
+                        val rawCategory = m["category"] as? String ?: "Other"
+                        incomeCategories.firstOrNull { it.equals(rawCategory, ignoreCase = true) } ?: "Other"
+                    }
+                    TransactionType.EXPENSE -> {
+                        val rawCategory = m["category"] as? String ?: "Other"
+                        expenseCategories.firstOrNull { it.equals(rawCategory, ignoreCase = true) } ?: "Other"
+                    }
+                }
+
+                val title = (m["title"] as? String)?.trim().takeUnless { it.isNullOrBlank() }
+                    ?: if (personName.isNotBlank()) personName else category
 
                 val parsedDate = try {
                     isoFormat.parse(m["date"] as? String ?: "") ?: Date()
@@ -97,18 +137,24 @@ object SonioxFirebaseHelper {
                     Date()
                 }
 
-                Expense(
-                    id = UUID.randomUUID().toString(),
+                // If updating, preserve the original Firestore ID so set() overwrites the existing document
+                val finalId = if (isUpdate) matchedId else UUID.randomUUID().toString()
+
+                val expense = Expense(
+                    id = finalId,
                     title = title,
                     amount = amount,
                     category = category,
-                    date = displayFormat.format(parsedDate),
+                    date = displayFormatStandard.format(parsedDate),
                     monthYear = monthYearFormat.format(parsedDate),
-                    type = type
+                    type = type,
+                    personName = personName
                 )
+
+                ParsedVoiceResult(expense = expense, isUpdate = isUpdate)
             }
 
-            Result.success(expenses)
+            Result.success(parsedResults)
         } catch (e: Exception) {
             e.printStackTrace()
             Result.failure(e)
