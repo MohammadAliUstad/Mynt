@@ -14,17 +14,22 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.tooling.preview.Preview
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import com.yourname.expensetracker.ui.theme.ExpenseTrackerTheme
 
 /**
  * Donut (ring) chart drawn with Compose Canvas comparing Income and Expense.
+ * Optional [size], [strokeWidth] and [centerContent] (e.g. "Net" label) - defaults keep the old look.
  */
 @Composable
 fun DonutChart(
     income: Double,
     expense: Double,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    size: Dp = 86.dp,
+    strokeWidth: Dp = 14.dp,
+    centerContent: (@Composable () -> Unit)? = null
 ) {
     val total = income + expense
     val incomeRatio = if (total > 0) (income / total).toFloat() else 0f
@@ -48,11 +53,11 @@ fun DonutChart(
     val emptyColor = Color(0xFFE0E0E0)   // Light Gray
 
     Box(
-        modifier = modifier.size(86.dp),
+        modifier = modifier.size(size),
         contentAlignment = Alignment.Center
     ) {
-        Canvas(modifier = Modifier.size(86.dp)) {
-            val strokeWidth = 14.dp.toPx()
+        Canvas(modifier = Modifier.size(size)) {
+            val strokePx = strokeWidth.toPx()
 
             if (total == 0.0) {
                 // Draw empty gray ring when both income and expense are 0
@@ -61,7 +66,7 @@ fun DonutChart(
                     startAngle = 0f,
                     sweepAngle = 360f,
                     useCenter = false,
-                    style = Stroke(width = strokeWidth)
+                    style = Stroke(width = strokePx)
                 )
             } else {
                 val gapDegree = 6f
@@ -77,7 +82,7 @@ fun DonutChart(
                         startAngle = startAngle,
                         sweepAngle = incomeAngle,
                         useCenter = false,
-                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                        style = Stroke(width = strokePx, cap = StrokeCap.Round)
                     )
                 }
 
@@ -90,11 +95,13 @@ fun DonutChart(
                         startAngle = startAngle,
                         sweepAngle = expenseAngle,
                         useCenter = false,
-                        style = Stroke(width = strokeWidth, cap = StrokeCap.Round)
+                        style = Stroke(width = strokePx, cap = StrokeCap.Round)
                     )
                 }
             }
         }
+
+        centerContent?.invoke()
     }
 }
 

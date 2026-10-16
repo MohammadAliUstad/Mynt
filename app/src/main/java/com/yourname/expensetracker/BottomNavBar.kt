@@ -7,9 +7,7 @@ import androidx.compose.foundation.BorderStroke
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.hoverable
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsHoveredAsState
 import androidx.compose.foundation.interaction.collectIsPressedAsState
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -30,6 +28,7 @@ import androidx.compose.material.icons.filled.BarChart
 import androidx.compose.material.icons.filled.Home
 import androidx.compose.material.icons.filled.Mic
 import androidx.compose.material.icons.filled.Person
+import androidx.compose.material.icons.filled.Receipt
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
@@ -107,10 +106,10 @@ fun BottomNavBar(
                     modifier = Modifier.weight(1f)
                 )
 
-                // 2. Add Tab
+                // 2. Transactions (History) Tab
                 NavItem(
-                    icon = Icons.Default.Add,
-                    label = "Add",
+                    icon = Icons.Default.Receipt,
+                    label = "History",
                     isSelected = selectedTab == NavTab.ADD,
                     onClick = { onTabSelected(NavTab.ADD) },
                     modifier = Modifier.weight(1f)
@@ -150,7 +149,7 @@ fun BottomNavBar(
 }
 
 /**
- * Individual Navigation Item for Home, Add, Stats, and Me with springy circular reveal hover effect.
+ * Individual Navigation Item for Home, Add, Stats, and Me with springy press feedback animation.
  */
 @Composable
 private fun NavItem(
@@ -161,7 +160,7 @@ private fun NavItem(
     modifier: Modifier = Modifier
 ) {
     val interactionSource = remember { MutableInteractionSource() }
-    val isHovered by interactionSource.collectIsHoveredAsState()
+    val isPressed by interactionSource.collectIsPressedAsState()
 
     // Spring animation for icon scale bounce on selection
     val iconScale by animateFloatAsState(
@@ -173,20 +172,19 @@ private fun NavItem(
         label = "navItemScale"
     )
 
-    // Bouncy spring animation for circular reveal on hover
-    val hoverProgress by animateFloatAsState(
-        targetValue = if (isHovered && !isSelected) 1.0f else 0.0f,
+    // Smooth press feedback animation
+    val pressProgress by animateFloatAsState(
+        targetValue = if (isPressed && !isSelected) 1.0f else 0.0f,
         animationSpec = spring(
             dampingRatio = Spring.DampingRatioMediumBouncy,
             stiffness = Spring.StiffnessLow
         ),
-        label = "hoverProgress"
+        label = "pressProgress"
     )
 
     Column(
         modifier = modifier
             .clip(CircleShape)
-            .hoverable(interactionSource)
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
@@ -196,19 +194,19 @@ private fun NavItem(
         horizontalAlignment = Alignment.CenterHorizontally,
         verticalArrangement = Arrangement.Center
     ) {
-        // Icon container with circular selection highlight and expanding hover reveal
+        // Icon container with circular selection highlight and press feedback
         Box(
             contentAlignment = Alignment.Center
         ) {
-            // Subtle semi-transparent surface overlay that expands as a circle from center on hover
-            if (hoverProgress > 0.001f && !isSelected) {
+            // Temporary press overlay when touched
+            if (pressProgress > 0.001f && !isSelected) {
                 Box(
                     modifier = Modifier
                         .size(36.dp)
                         .graphicsLayer {
-                            scaleX = hoverProgress
-                            scaleY = hoverProgress
-                            alpha = hoverProgress.coerceIn(0f, 1f)
+                            scaleX = pressProgress
+                            scaleY = pressProgress
+                            alpha = pressProgress.coerceIn(0f, 1f)
                         }
                         .clip(CircleShape)
                         .background(MaterialTheme.colorScheme.onSurface.copy(alpha = 0.12f))

@@ -48,7 +48,7 @@ enum class ColorAccentTheme(val displayName: String, val primaryHex: Long) {
 }
 
 /**
- * Persistent manager for user preferences (Theme, AMOLED Dark, Font, Currency, Notifications).
+ * Persistent manager for user preferences (Theme, AMOLED Dark, Font, Currency, Notifications, Reminders, Haptics).
  */
 object SettingsManager {
 
@@ -58,6 +58,9 @@ object SettingsManager {
     private val KEY_ACCENT_THEME = stringPreferencesKey("accent_theme")
     private val KEY_CURRENCY_SYMBOL = stringPreferencesKey("currency_symbol")
     private val KEY_NOTIFICATIONS = booleanPreferencesKey("notifications_enabled")
+    private val KEY_DAILY_REMINDER = booleanPreferencesKey("daily_reminder_enabled")
+    private val KEY_PLAYFUL_REMINDER = booleanPreferencesKey("playful_reminder_enabled")
+    private val KEY_HAPTICS = booleanPreferencesKey("haptics_enabled")
 
     private val scope = CoroutineScope(Dispatchers.IO)
 
@@ -77,6 +80,15 @@ object SettingsManager {
         private set
 
     var notificationsEnabled by mutableStateOf(true)
+        private set
+
+    var dailyReminderEnabled by mutableStateOf(true)
+        private set
+
+    var playfulRemindersEnabled by mutableStateOf(true)
+        private set
+
+    var hapticsEnabled by mutableStateOf(true)
         private set
 
     /**
@@ -113,6 +125,9 @@ object SettingsManager {
 
                 currencySymbol = prefs[KEY_CURRENCY_SYMBOL] ?: "₹"
                 notificationsEnabled = prefs[KEY_NOTIFICATIONS] ?: true
+                dailyReminderEnabled = prefs[KEY_DAILY_REMINDER] ?: true
+                playfulRemindersEnabled = prefs[KEY_PLAYFUL_REMINDER] ?: true
+                hapticsEnabled = prefs[KEY_HAPTICS] ?: true
             } catch (e: Exception) {
                 e.printStackTrace()
             }
@@ -193,6 +208,36 @@ object SettingsManager {
         scope.launch {
             appContext.dataStore.edit { prefs ->
                 prefs[KEY_NOTIFICATIONS] = enabled
+            }
+        }
+    }
+
+    fun updateDailyReminderEnabled(context: Context, enabled: Boolean) {
+        dailyReminderEnabled = enabled
+        val appContext = context.applicationContext
+        scope.launch {
+            appContext.dataStore.edit { prefs ->
+                prefs[KEY_DAILY_REMINDER] = enabled
+            }
+        }
+    }
+
+    fun updatePlayfulRemindersEnabled(context: Context, enabled: Boolean) {
+        playfulRemindersEnabled = enabled
+        val appContext = context.applicationContext
+        scope.launch {
+            appContext.dataStore.edit { prefs ->
+                prefs[KEY_PLAYFUL_REMINDER] = enabled
+            }
+        }
+    }
+
+    fun updateHapticsEnabled(context: Context, enabled: Boolean) {
+        hapticsEnabled = enabled
+        val appContext = context.applicationContext
+        scope.launch {
+            appContext.dataStore.edit { prefs ->
+                prefs[KEY_HAPTICS] = enabled
             }
         }
     }

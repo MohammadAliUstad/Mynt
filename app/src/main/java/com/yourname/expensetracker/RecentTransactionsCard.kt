@@ -1,11 +1,15 @@
 package com.yourname.expensetracker
 
-import android.content.Context
-import android.net.Uri
-import android.provider.OpenableColumns
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.expandVertically
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.shrinkVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.clickable
+import androidx.compose.foundation.interaction.MutableInteractionSource
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -23,42 +27,42 @@ import androidx.compose.material3.CardDefaults
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
+import androidx.compose.material3.ripple
 import androidx.compose.material3.TextButton
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.platform.LocalFocusManager
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.tooling.preview.Preview
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.yourname.expensetracker.ui.theme.ExpenseTrackerTheme
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 
 /**
- * Single Card containing the list of recent transactions for the selected month,
- * or an empty state with an "Import Transactions" button.
+ * Compact Card containing recent transactions for the selected month,
+ * with downward expansion to show Full Transaction history on toggle,
+ * and symmetrical upward shrink animation on collapse.
+ *
+ * Note: statement import now lives in the Import Documents card on the Home screen.
+ * [onImportFileSelected] is kept (unused) only so older callers still compile.
  */
 @Composable
 fun RecentTransactionsCard(
     transactions: List<Expense>,
-    onImportFileSelected: (String) -> Unit,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    onImportFileSelected: (String) -> Unit = {},
+    isExpanded: Boolean = false,
+    onToggleHistory: () -> Unit = {},
+    onTransactionClick: (Expense) -> Unit = {}
 ) {
-    val context = LocalContext.current
-
-    // SAF System File Picker launcher for PDF / CSV
-    val filePickerLauncher = rememberLauncherForActivityResult(
-        contract = ActivityResultContracts.OpenDocument()
-    ) { uri: Uri? ->
-        if (uri != null) {
-            val fileName = getFileNameFromUri(context, uri) ?: "Selected statement"
-            onImportFileSelected(fileName)
-        }
-    }
-
     Card(
         modifier = modifier.fillMaxWidth(),
         shape = RoundedCornerShape(24.dp),
@@ -73,7 +77,6 @@ fun RecentTransactionsCard(
                 .padding(16.dp)
         ) {
             if (transactions.isEmpty()) {
-                // Empty state inside the card
                 Column(
                     modifier = Modifier
                         .fillMaxWidth()
@@ -88,19 +91,14 @@ fun RecentTransactionsCard(
                             .background(MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.6f)),
                         contentAlignment = Alignment.Center
                     ) {
-                        Text(
-                            text = "🧾",
-                            fontSize = 28.sp
-                        )
+                        Text(text = "🧾", fontSize = 28.sp)
                     }
 
                     Spacer(modifier = Modifier.height(14.dp))
 
                     Text(
                         text = "No transactions yet",
-                        style = MaterialTheme.typography.titleMedium.copy(
-                            fontWeight = FontWeight.Bold
-                        ),
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                         color = MaterialTheme.colorScheme.onSurface
                     )
 
@@ -112,93 +110,74 @@ fun RecentTransactionsCard(
                         color = MaterialTheme.colorScheme.onSurfaceVariant,
                         textAlign = TextAlign.Center
                     )
+                }
+            } else {
+                val topItems = transactions.take(3)
+                val extraItems = transactions.drop(3)
 
-                    Spacer(modifier = Modifier.height(16.dp))
+                // Top 3 items (Always visible)
+                topItems.forEachIndexed { index, transaction ->
+                    TransactionItem(
+                        transaction = transaction,
+                        onClick = { onTransactionClick(transaction) }
+                    )
+
+                    if (index < topItems.size - 1 || extraItems.isNotEmpty()) {
+                        HorizontalDivider(
+                            modifier = Modifier.padding(horizontal = 4.dp),
+                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                        )
+                    }
+                }
+
+                // Extra items (Symmetrical vertical expand/shrink animation!)
+                if (extraItems.isNotEmpty()) {
+                    AnimatedVisibility(
+                        visible = isExpanded,
+                        enter = expandVertically(
+                            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                            expandFrom = Alignment.Top
+                        ) + fadeIn(animationSpec = tween(350)),
+                        exit = shrinkVertically(
+                            animationSpec = tween(durationMillis = 350, easing = FastOutSlowInEasing),
+                            shrinkTowards = Alignment.Top
+                        ) + fadeOut(animationSpec = tween(350))
+                    ) {
+                        Column {
+                            extraItems.forEachIndexed { index, transaction ->
+                                TransactionItem(
+                                    transaction = transaction,
+                                    onClick = { onTransactionClick(transaction) }
+                                )
+
+                                if (index < extraItems.size - 1) {
+                                    HorizontalDivider(
+                                        modifier = Modifier.padding(horizontal = 4.dp),
+                                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                                    )
+                                }
+                            }
+                        }
+                    }
+
+                    // Full History / Show Less Toggle Button
+                    Spacer(modifier = Modifier.height(10.dp))
+                    HorizontalDivider(
+                        modifier = Modifier.padding(horizontal = 4.dp),
+                        color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
+                    )
+                    Spacer(modifier = Modifier.height(4.dp))
 
                     TextButton(
-                        onClick = {
-                            filePickerLauncher.launch(
-                                arrayOf("application/pdf", "text/csv", "text/comma-separated-values")
-                            )
-                        }
+                        onClick = onToggleHistory,
+                        modifier = Modifier.fillMaxWidth()
                     ) {
                         Text(
-                            text = "Import Transactions",
+                            text = if (isExpanded) "Show Less" else "Full History",
                             style = MaterialTheme.typography.titleMedium.copy(
                                 fontWeight = FontWeight.Bold
                             ),
                             color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-                }
-            } else {
-                // List of latest transactions (max 8)
-                val displayList = transactions.take(8)
-                displayList.forEachIndexed { index, transaction ->
-                    val (categoryIcon, categoryBgColor) = getCategoryIconAndColor(transaction.category, transaction.type)
-
-                    Row(
-                        modifier = Modifier
-                            .fillMaxWidth()
-                            .padding(vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically
-                    ) {
-                        // Icon Badge
-                        Box(
-                            modifier = Modifier
-                                .size(44.dp)
-                                .clip(CircleShape)
-                                .background(categoryBgColor),
-                            contentAlignment = Alignment.Center
-                        ) {
-                            Text(
-                                text = categoryIcon,
-                                fontSize = 18.sp,
-                                textAlign = TextAlign.Center
-                            )
-                        }
-
-                        Spacer(modifier = Modifier.width(12.dp))
-
-                        // Details Column
-                        Column(modifier = Modifier.weight(1f)) {
-                            Text(
-                                text = transaction.title,
-                                style = MaterialTheme.typography.bodyLarge.copy(
-                                    fontWeight = FontWeight.SemiBold
-                                ),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-
-                            Spacer(modifier = Modifier.height(2.dp))
-
-                            Text(
-                                text = "${transaction.category} • ${transaction.date}",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
-
-                        // Amount Column
-                        val formattedAmount = SettingsManager.formatAmount(transaction.amount)
-                        val amountColor = if (transaction.type == TransactionType.INCOME)
-                            Color(0xFF2E7D32)
-                        else
-                            MaterialTheme.colorScheme.onSurface
-
-                        Text(
-                            text = if (transaction.type == TransactionType.INCOME) "+$formattedAmount" else formattedAmount,
-                            style = MaterialTheme.typography.titleMedium.copy(
-                                fontWeight = FontWeight.Bold
-                            ),
-                            color = amountColor
-                        )
-                    }
-
-                    if (index < displayList.size - 1) {
-                        HorizontalDivider(
-                            modifier = Modifier.padding(horizontal = 4.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.4f)
                         )
                     }
                 }
@@ -208,28 +187,86 @@ fun RecentTransactionsCard(
 }
 
 /**
- * Extracts human-readable file name from SAF content Uri.
+ * Individual Transaction Item.
  */
-private fun getFileNameFromUri(context: Context, uri: Uri): String? {
-    var result: String? = null
-    if (uri.scheme == "content") {
-        context.contentResolver.query(uri, null, null, null, null)?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val index = cursor.getColumnIndex(OpenableColumns.DISPLAY_NAME)
-                if (index != -1) {
-                    result = cursor.getString(index)
+@Composable
+private fun TransactionItem(
+    transaction: Expense,
+    onClick: () -> Unit
+) {
+    val (categoryIcon, categoryBgColor) = getCategoryIconAndColor(transaction.category, transaction.type)
+    val focusManager = LocalFocusManager.current
+    val scope = rememberCoroutineScope()
+
+    Row(
+        modifier = Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(12.dp))
+            .clickable(
+                interactionSource = remember { MutableInteractionSource() },
+                indication = ripple(color = MaterialTheme.colorScheme.onSurfaceVariant),
+                onClick = {
+                    scope.launch {
+                        delay(150)
+                        focusManager.clearFocus(force = true)
+                        onClick()
+                    }
                 }
-            }
+            )
+            .padding(vertical = 10.dp, horizontal = 8.dp),
+        verticalAlignment = Alignment.CenterVertically
+    ) {
+        // Icon Badge
+        Box(
+            modifier = Modifier
+                .size(44.dp)
+                .clip(CircleShape)
+                .background(categoryBgColor),
+            contentAlignment = Alignment.Center
+        ) {
+            Text(
+                text = categoryIcon,
+                fontSize = 18.sp,
+                textAlign = TextAlign.Center
+            )
         }
-    }
-    if (result == null) {
-        result = uri.path
-        val cut = result?.lastIndexOf('/') ?: -1
-        if (cut != -1) {
-            result = result?.substring(cut + 1)
+
+        Spacer(modifier = Modifier.width(12.dp))
+
+        // Details Column
+        Column(modifier = Modifier.weight(1f)) {
+            Text(
+                text = transaction.title,
+                style = MaterialTheme.typography.bodyLarge.copy(
+                    fontWeight = FontWeight.SemiBold
+                ),
+                color = MaterialTheme.colorScheme.onSurface
+            )
+
+            Spacer(modifier = Modifier.height(2.dp))
+
+            Text(
+                text = "${transaction.category} • ${transaction.date}",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
         }
+
+        // Amount Column
+        val formattedAmount = SettingsManager.formatAmount(transaction.amount)
+        val amountColor = if (transaction.type == TransactionType.INCOME)
+            Color(0xFF2E7D32)
+        else
+            MaterialTheme.colorScheme.onSurface
+
+        Text(
+            text = if (transaction.type == TransactionType.INCOME) "+$formattedAmount" else formattedAmount,
+            style = MaterialTheme.typography.titleMedium.copy(
+                fontWeight = FontWeight.Bold
+            ),
+            color = amountColor
+        )
     }
-    return result
 }
 
 @Preview(showBackground = true, name = "Recent Transactions Card Preview")
@@ -238,8 +275,7 @@ fun RecentTransactionsCardPreview() {
     ExpenseTrackerTheme {
         Box(modifier = Modifier.padding(16.dp)) {
             RecentTransactionsCard(
-                transactions = emptyList(),
-                onImportFileSelected = {}
+                transactions = emptyList()
             )
         }
     }

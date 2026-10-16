@@ -27,8 +27,10 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Check
 import androidx.compose.material.icons.filled.Close
@@ -38,6 +40,7 @@ import androidx.compose.material3.Button
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.Card
 import androidx.compose.material3.CardDefaults
+import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
@@ -69,11 +72,15 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.core.content.ContextCompat
 import com.yourname.expensetracker.ui.theme.ExpenseTrackerTheme
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.flow.catch
 import kotlinx.coroutines.launch
+import java.io.ByteArrayOutputStream
 
 /**
- * Full-screen Voice Screen overlay supporting live speech recognition,
- * mic permission requests, error handling, voice parsing, and direct transaction creation.
+ * Full-screen Voice Screen overlay powered by Soniox STT via Firebase Cloud Functions,
+ * displaying high-accuracy transcripts and structured transaction parsed cards.
+ * Transcribed text is parsed by Gemini (via Firebase) into one or more transactions.
  */
 @Composable
 fun VoiceScreen(
@@ -84,13 +91,22 @@ fun VoiceScreen(
     val coroutineScope = rememberCoroutineScope()
     val snackbarHostState = remember { SnackbarHostState() }
 
-    // Speech recognizer helper state
-    val speechHelper = remember { SpeechRecognizerHelper(context) }
+    // Helpers copied directly from Amatyaa STT architecture
+    val androidAudioRecorder = remember { AndroidAudioRecorder(context) }
+    val audioBuffer = remember { ByteArrayOutputStream() }
 
-    // Release SpeechRecognizer when screen closes
+    var recordingJob by remember { mutableStateOf<Job?>(null) }
+    var isRecording by remember { mutableStateOf(false) }
+    var isSonioxProcessing by remember { mutableStateOf(false) }
+    var sonioxTranscript by remember { mutableStateOf("") }
+    var sonioxError by remember { mutableStateOf<String?>(null) }
+    var parsedTransactions by remember { mutableStateOf<List<Expense>>(emptyList()) }
+
+    // Release resources on screen close
     DisposableEffect(Unit) {
         onDispose {
-            speechHelper.destroy()
+            recordingJob?.cancel()
+            androidAudioRecorder.stopRecording()
         }
     }
 
@@ -104,32 +120,98 @@ fun VoiceScreen(
         )
     }
 
-    var permissionDeniedReason by remember { mutableStateOf(false) }
-
     // Permission launcher
     val permissionLauncher = rememberLauncherForActivityResult(
         contract = ActivityResultContracts.RequestPermission()
     ) { isGranted ->
         hasMicPermission = isGranted
         if (isGranted) {
-            permissionDeniedReason = false
-            speechHelper.startListening()
-        } else {
-            permissionDeniedReason = true
+            sonioxTranscript = ""
+            parsedTransactions = emptyList()
+            sonioxError = null
+            isSonioxProcessing = false
+            isRecording = true
+            audioBuffer.reset()
+
+            recordingJob?.cancel()
+            recordingJob = coroutineScope.launch {
+                androidAudioRecorder.startRecording()
+                    .catch { e ->
+                        isRecording = false
+                        sonioxError = e.localizedMessage ?: "Audio recording error"
+                    }
+                    .collect { chunk ->
+                        audioBuffer.write(chunk)
+                    }
+            }
         }
     }
 
-    // Auto-start listening on open if permission is already granted
-    LaunchedEffect(Unit) {
+    fun startListeningFlow() {
         if (hasMicPermission) {
-            speechHelper.startListening()
+            sonioxTranscript = ""
+            parsedTransactions = emptyList()
+            sonioxError = null
+            isSonioxProcessing = false
+            isRecording = true
+            audioBuffer.reset()
+
+            recordingJob?.cancel()
+            recordingJob = coroutineScope.launch {
+                androidAudioRecorder.startRecording()
+                    .catch { e ->
+                        isRecording = false
+                        sonioxError = e.localizedMessage ?: "Audio recording error"
+                    }
+                    .collect { chunk ->
+                        audioBuffer.write(chunk)
+                    }
+            }
         } else {
             permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
         }
     }
 
-    // Infinite pulsing animation (active ONLY while listening)
-    val isListening = speechHelper.speechState == SpeechState.LISTENING
+    fun stopAndTranscribeFlow() {
+        isRecording = false
+        recordingJob?.cancel()
+        androidAudioRecorder.stopRecording()
+
+        val capturedPcmBytes = audioBuffer.toByteArray()
+
+        if (capturedPcmBytes.isNotEmpty()) {
+            isSonioxProcessing = true
+            coroutineScope.launch {
+                val result = SonioxFirebaseHelper.transcribeAudio(capturedPcmBytes)
+                if (result.isSuccess) {
+                    val text = result.getOrNull() ?: ""
+
+                    // Gemini parsing (supports multiple transactions, Hindi/English).
+                    // Falls back to the old local parser if Gemini fails.
+                    val aiParsed = SonioxFirebaseHelper.parseTransactions(text).getOrNull()
+                    parsedTransactions = if (!aiParsed.isNullOrEmpty()) {
+                        aiParsed
+                    } else {
+                        listOfNotNull(VoiceTransactionParser.parse(text))
+                    }
+
+                    sonioxTranscript = text
+                } else {
+                    sonioxError = result.exceptionOrNull()?.localizedMessage ?: "Soniox transcription failed."
+                }
+                isSonioxProcessing = false
+            }
+        } else {
+            sonioxError = "No speech audio captured. Please try again."
+        }
+    }
+
+    // Auto-start recording on open
+    LaunchedEffect(Unit) {
+        startListeningFlow()
+    }
+
+    // Pulsing animation when listening
     val infiniteTransition = rememberInfiniteTransition(label = "pulseTransition")
 
     val pulseScale by infiniteTransition.animateFloat(
@@ -152,13 +234,6 @@ fun VoiceScreen(
         label = "pulseAlpha"
     )
 
-    // Parsed transaction from spoken text
-    val parsedTransaction = remember(speechHelper.spokenText) {
-        if (speechHelper.spokenText.isNotBlank()) {
-            VoiceTransactionParser.parse(speechHelper.spokenText)
-        } else null
-    }
-
     Scaffold(
         snackbarHost = {
             SnackbarHost(hostState = snackbarHostState) { data ->
@@ -180,7 +255,7 @@ fun VoiceScreen(
                 .padding(innerPadding)
                 .padding(20.dp)
         ) {
-            // Close Button at top left
+            // Close Button
             IconButton(
                 onClick = onCloseClick,
                 modifier = Modifier
@@ -199,11 +274,12 @@ fun VoiceScreen(
             Column(
                 modifier = Modifier
                     .align(Alignment.Center)
+                    .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center
             ) {
-                // Mic Button with Pulsing Animation (pulses ONLY while listening)
+                // Mic Button
                 Box(
                     contentAlignment = Alignment.Center,
                     modifier = Modifier
@@ -212,16 +288,15 @@ fun VoiceScreen(
                             if (!hasMicPermission) {
                                 permissionLauncher.launch(Manifest.permission.RECORD_AUDIO)
                             } else {
-                                if (speechHelper.speechState == SpeechState.LISTENING) {
-                                    speechHelper.stopListening()
+                                if (isRecording) {
+                                    stopAndTranscribeFlow()
                                 } else {
-                                    speechHelper.startListening()
+                                    startListeningFlow()
                                 }
                             }
                         }
                 ) {
-                    // Pulsing Outer Ring (Visible ONLY when listening)
-                    if (isListening) {
+                    if (isRecording) {
                         Box(
                             modifier = Modifier
                                 .size(140.dp)
@@ -232,7 +307,6 @@ fun VoiceScreen(
                         )
                     }
 
-                    // Main Gold Mic Circle Button
                     Box(
                         modifier = Modifier
                             .size(96.dp)
@@ -240,12 +314,20 @@ fun VoiceScreen(
                             .background(GoldAccent),
                         contentAlignment = Alignment.Center
                     ) {
-                        Icon(
-                            imageVector = Icons.Default.Mic,
-                            contentDescription = "Voice Input",
-                            tint = Color.Black,
-                            modifier = Modifier.size(48.dp)
-                        )
+                        if (isSonioxProcessing) {
+                            CircularProgressIndicator(
+                                modifier = Modifier.size(40.dp),
+                                color = Color.Black,
+                                strokeWidth = 3.dp
+                            )
+                        } else {
+                            Icon(
+                                imageVector = Icons.Default.Mic,
+                                contentDescription = "Voice Input",
+                                tint = Color.Black,
+                                modifier = Modifier.size(48.dp)
+                            )
+                        }
                     }
                 }
 
@@ -261,61 +343,65 @@ fun VoiceScreen(
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Please allow microphone access to use voice recognition.",
+                            text = "Please allow microphone access to use Soniox voice recognition.",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
-                            onClick = {
-                                openAppSettings(context)
-                            },
+                            onClick = { openAppSettings(context) },
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Text("Open App Settings")
                         }
                     }
 
-                    speechHelper.speechState == SpeechState.LISTENING -> {
+                    isSonioxProcessing -> {
                         Text(
-                            text = if (speechHelper.spokenText.isEmpty()) "Listening..." else "Hearing you...",
+                            text = "Transcribing with Soniox Cloud AI...",
+                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
+                            color = MaterialTheme.colorScheme.primary
+                        )
+                        Spacer(modifier = Modifier.height(6.dp))
+                        Text(
+                            text = "Securely processing audio through Firebase",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f)
+                        )
+                    }
+
+                    isRecording -> {
+                        Text(
+                            text = "Listening... (Tap mic when done)",
                             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.onBackground
                         )
                         Spacer(modifier = Modifier.height(8.dp))
                         Text(
-                            text = "Try saying: \"Spent 250 on lunch\" or \"Earned 50000 salary\"",
+                            text = "Try saying: \"Spent 4100 on EMI on 2nd October\"",
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.7f),
                             textAlign = TextAlign.Center
                         )
                     }
 
-                    speechHelper.speechState == SpeechState.PROCESSING -> {
+                    sonioxError != null -> {
                         Text(
-                            text = "Processing speech...",
-                            style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.Bold),
-                            color = MaterialTheme.colorScheme.primary
-                        )
-                    }
-
-                    speechHelper.speechState == SpeechState.ERROR -> {
-                        Text(
-                            text = "Speech Recognition Error",
+                            text = "Voice Recognition Error",
                             style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
                             color = MaterialTheme.colorScheme.error
                         )
                         Spacer(modifier = Modifier.height(6.dp))
                         Text(
-                            text = speechHelper.errorMessage ?: "Something went wrong.",
+                            text = sonioxError!!,
                             style = MaterialTheme.typography.bodyMedium,
                             color = MaterialTheme.colorScheme.onBackground.copy(alpha = 0.8f),
                             textAlign = TextAlign.Center
                         )
                         Spacer(modifier = Modifier.height(16.dp))
                         Button(
-                            onClick = { speechHelper.startListening() },
+                            onClick = { startListeningFlow() },
                             shape = RoundedCornerShape(12.dp)
                         ) {
                             Icon(imageVector = Icons.Default.Refresh, contentDescription = "Retry")
@@ -333,8 +419,8 @@ fun VoiceScreen(
                     }
                 }
 
-                // DISPLAY RECOGNIZED TEXT & PARSED TRANSACTION CONFIRMATION CARD
-                if (speechHelper.spokenText.isNotEmpty()) {
+                // RECOGNIZED TEXT & PARSED TRANSACTION CARD
+                if (sonioxTranscript.isNotEmpty() && !isSonioxProcessing) {
                     Spacer(modifier = Modifier.height(24.dp))
 
                     Card(
@@ -350,16 +436,18 @@ fun VoiceScreen(
                                 .padding(18.dp),
                             horizontalAlignment = Alignment.CenterHorizontally
                         ) {
-                            Text(
-                                text = "Recognized Text:",
-                                style = MaterialTheme.typography.labelMedium,
-                                color = MaterialTheme.colorScheme.primary
-                            )
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                Text(
+                                    text = "Soniox AI Transcript:",
+                                    style = MaterialTheme.typography.labelMedium.copy(fontWeight = FontWeight.Bold),
+                                    color = MaterialTheme.colorScheme.primary
+                                )
+                            }
 
-                            Spacer(modifier = Modifier.height(4.dp))
+                            Spacer(modifier = Modifier.height(6.dp))
 
                             Text(
-                                text = "\"${speechHelper.spokenText}\"",
+                                text = "\"$sonioxTranscript\"",
                                 style = MaterialTheme.typography.bodyLarge.copy(
                                     fontWeight = FontWeight.SemiBold
                                 ),
@@ -367,8 +455,8 @@ fun VoiceScreen(
                                 textAlign = TextAlign.Center
                             )
 
-                            // PARSED TRANSACTION DETAILS
-                            if (parsedTransaction != null) {
+                            // PARSED TRANSACTION DETAILS (one card per detected transaction)
+                            parsedTransactions.forEach { parsedTransaction ->
                                 Spacer(modifier = Modifier.height(16.dp))
 
                                 Card(
@@ -403,7 +491,7 @@ fun VoiceScreen(
                                                 Spacer(modifier = Modifier.width(8.dp))
 
                                                 Text(
-                                                    text = parsedTransaction.category,
+                                                    text = "${parsedTransaction.category} • ${parsedTransaction.date}",
                                                     style = MaterialTheme.typography.labelMedium,
                                                     color = MaterialTheme.colorScheme.onSurfaceVariant
                                                 )
@@ -438,7 +526,7 @@ fun VoiceScreen(
                                 horizontalArrangement = Arrangement.spacedBy(10.dp)
                             ) {
                                 OutlinedButton(
-                                    onClick = { speechHelper.startListening() },
+                                    onClick = { startListeningFlow() },
                                     modifier = Modifier.weight(1f),
                                     shape = RoundedCornerShape(12.dp)
                                 ) {
@@ -453,8 +541,8 @@ fun VoiceScreen(
 
                                 Button(
                                     onClick = {
-                                        if (parsedTransaction != null) {
-                                            onSaveTransaction(parsedTransaction)
+                                        if (parsedTransactions.isNotEmpty()) {
+                                            parsedTransactions.forEach { onSaveTransaction(it) }
                                         } else {
                                             coroutineScope.launch {
                                                 snackbarHostState.showSnackbar("Could not detect amount. Please try again.")
@@ -473,7 +561,7 @@ fun VoiceScreen(
                                         modifier = Modifier.size(16.dp)
                                     )
                                     Spacer(modifier = Modifier.width(6.dp))
-                                    Text("Save")
+                                    Text(if (parsedTransactions.size > 1) "Save all" else "Save")
                                 }
                             }
                         }

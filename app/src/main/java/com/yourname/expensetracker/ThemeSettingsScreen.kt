@@ -105,222 +105,236 @@ fun ThemeSettingsScreen(
 
             Spacer(modifier = Modifier.height(20.dp))
 
-            // 1. THEME MODE SELECTOR
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Brightness6,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Theme Mode",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            }
+            ThemeSettingsContent()
+        }
+    }
+}
 
-            Spacer(modifier = Modifier.height(10.dp))
+/**
+ * Theme Mode, AMOLED, App Font Style and Accent Color sections.
+ * Used inline by SettingsScreen (Appearance) and by ThemeSettingsScreen.
+ */
+@OptIn(ExperimentalLayoutApi::class)
+@Composable
+fun ThemeSettingsContent() {
+    val context = LocalContext.current
 
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                )
-            ) {
-                Column {
-                    val modes = ThemeMode.entries
-                    modes.forEachIndexed { index, mode ->
-                        val (icon, title, subtitle) = when (mode) {
-                            ThemeMode.LIGHT -> Triple(Icons.Default.LightMode, "Light", "Always use light theme")
-                            ThemeMode.DARK -> Triple(Icons.Default.DarkMode, "Dark", "Always use dark theme")
-                            ThemeMode.SYSTEM -> Triple(Icons.Default.AutoMode, "System", "Match system settings")
-                        }
+    Column(modifier = Modifier.fillMaxWidth()) {
+        // 1. THEME MODE SELECTOR
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.Brightness6,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Theme Mode",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
 
-                        val isSelected = SettingsManager.themeMode == mode
+        Spacer(modifier = Modifier.height(10.dp))
 
-                        ListItem(
-                            headlineContent = {
-                                Text(title, fontWeight = FontWeight.SemiBold)
-                            },
-                            supportingContent = {
-                                Text(subtitle, style = MaterialTheme.typography.bodySmall)
-                            },
-                            leadingContent = {
-                                Icon(
-                                    imageVector = icon,
-                                    contentDescription = null,
-                                    tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
-                                )
-                            },
-                            trailingContent = {
-                                RadioButton(
-                                    selected = isSelected,
-                                    onClick = null
-                                )
-                            },
-                            colors = ListItemDefaults.colors(containerColor = Color.Transparent),
-                            modifier = Modifier
-                                .clickable {
-                                    SettingsManager.updateThemeMode(context, mode)
-                                }
-                                .padding(vertical = 2.dp)
-                        )
-                    }
-                }
-            }
-
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 2. AMOLED DARK VARIANT
-            Card(
-                modifier = Modifier.fillMaxWidth(),
-                shape = RoundedCornerShape(20.dp),
-                colors = CardDefaults.cardColors(
-                    containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
-                )
-            ) {
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.SpaceBetween
-                ) {
-                    Row(
-                        verticalAlignment = Alignment.CenterVertically,
-                        modifier = Modifier.weight(1f)
-                    ) {
-                        Icon(
-                            imageVector = Icons.Default.Contrast,
-                            contentDescription = null,
-                            tint = MaterialTheme.colorScheme.primary,
-                            modifier = Modifier.size(24.dp)
-                        )
-                        Spacer(modifier = Modifier.width(14.dp))
-                        Column {
-                            Text(
-                                text = "AMOLED Black Mode",
-                                style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
-                                color = MaterialTheme.colorScheme.onSurface
-                            )
-                            Text(
-                                text = "Use pure black background in dark mode",
-                                style = MaterialTheme.typography.bodySmall,
-                                color = MaterialTheme.colorScheme.onSurfaceVariant
-                            )
-                        }
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            )
+        ) {
+            Column {
+                val modes = ThemeMode.entries
+                modes.forEachIndexed { index, mode ->
+                    val (icon, title, subtitle) = when (mode) {
+                        ThemeMode.LIGHT -> Triple(Icons.Default.LightMode, "Light", "Always use light theme")
+                        ThemeMode.DARK -> Triple(Icons.Default.DarkMode, "Dark", "Always use dark theme")
+                        ThemeMode.SYSTEM -> Triple(Icons.Default.AutoMode, "System", "Match system settings")
                     }
 
-                    Switch(
-                        checked = SettingsManager.isAmoledMode,
-                        onCheckedChange = { isChecked ->
-                            SettingsManager.updateAmoledMode(context, isChecked)
-                        }
-                    )
-                }
-            }
+                    val isSelected = SettingsManager.themeMode == mode
 
-            Spacer(modifier = Modifier.height(24.dp))
-
-            // 3. FONT FAMILY SELECTION
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.TextFields,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "App Font Style",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground
-                )
-            }
-
-            Spacer(modifier = Modifier.height(10.dp))
-
-            FlowRow(
-                horizontalArrangement = Arrangement.spacedBy(8.dp),
-                verticalArrangement = Arrangement.spacedBy(8.dp),
-                modifier = Modifier.fillMaxWidth()
-            ) {
-                AppFontOption.entries.forEach { fontOption ->
-                    val isSelected = SettingsManager.fontOption == fontOption
-                    FilterChip(
-                        selected = isSelected,
-                        onClick = { SettingsManager.updateFontOption(context, fontOption) },
-                        label = {
-                            Text(
-                                text = fontOption.displayName,
-                                fontFamily = fontOption.fontFamily,
-                                fontWeight = FontWeight.SemiBold
+                    ListItem(
+                        headlineContent = {
+                            Text(title, fontWeight = FontWeight.SemiBold)
+                        },
+                        supportingContent = {
+                            Text(subtitle, style = MaterialTheme.typography.bodySmall)
+                        },
+                        leadingContent = {
+                            Icon(
+                                imageVector = icon,
+                                contentDescription = null,
+                                tint = if (isSelected) MaterialTheme.colorScheme.primary else MaterialTheme.colorScheme.onSurfaceVariant
                             )
                         },
-                        shape = RoundedCornerShape(18.dp),
-                        colors = FilterChipDefaults.filterChipColors(
-                            selectedContainerColor = MaterialTheme.colorScheme.primary,
-                            selectedLabelColor = MaterialTheme.colorScheme.onPrimary
-                        )
+                        trailingContent = {
+                            RadioButton(
+                                selected = isSelected,
+                                onClick = null
+                            )
+                        },
+                        colors = ListItemDefaults.colors(containerColor = Color.Transparent),
+                        modifier = Modifier
+                            .clickable {
+                                SettingsManager.updateThemeMode(context, mode)
+                            }
+                            .padding(vertical = 2.dp)
                     )
                 }
             }
+        }
 
-            Spacer(modifier = Modifier.height(24.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-            // 4. ACCENT COLOR PALETTE
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Icon(
-                    imageVector = Icons.Default.Palette,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.primary,
-                    modifier = Modifier.size(20.dp)
-                )
-                Spacer(modifier = Modifier.width(8.dp))
-                Text(
-                    text = "Accent Color Theme",
-                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
-                    color = MaterialTheme.colorScheme.onBackground
+        // 2. AMOLED DARK VARIANT
+        Card(
+            modifier = Modifier.fillMaxWidth(),
+            shape = RoundedCornerShape(20.dp),
+            colors = CardDefaults.cardColors(
+                containerColor = MaterialTheme.colorScheme.surfaceVariant.copy(alpha = 0.4f)
+            )
+        ) {
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.SpaceBetween
+            ) {
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(
+                        imageVector = Icons.Default.Contrast,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.primary,
+                        modifier = Modifier.size(24.dp)
+                    )
+                    Spacer(modifier = Modifier.width(14.dp))
+                    Column {
+                        Text(
+                            text = "AMOLED Black Mode",
+                            style = MaterialTheme.typography.bodyLarge.copy(fontWeight = FontWeight.SemiBold),
+                            color = MaterialTheme.colorScheme.onSurface
+                        )
+                        Text(
+                            text = "Use pure black background in dark mode",
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
+                }
+
+                Switch(
+                    checked = SettingsManager.isAmoledMode,
+                    onCheckedChange = { isChecked ->
+                        SettingsManager.updateAmoledMode(context, isChecked)
+                    }
                 )
             }
+        }
 
-            Spacer(modifier = Modifier.height(12.dp))
+        Spacer(modifier = Modifier.height(24.dp))
 
-            Row(
-                modifier = Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(10.dp)
-            ) {
-                ColorAccentTheme.entries.forEach { accent ->
-                    val isSelected = SettingsManager.accentTheme == accent
-                    val accentColor = Color(accent.primaryHex)
+        // 3. FONT FAMILY SELECTION
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.TextFields,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "App Font Style",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
 
-                    Box(
-                        modifier = Modifier
-                            .weight(1f)
-                            .height(50.dp)
-                            .clip(RoundedCornerShape(16.dp))
-                            .background(accentColor)
-                            .border(
-                                width = if (isSelected) 3.dp else 0.dp,
-                                color = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
-                                shape = RoundedCornerShape(16.dp)
-                            )
-                            .clickable {
-                                SettingsManager.updateAccentTheme(context, accent)
-                            },
-                        contentAlignment = Alignment.Center
-                    ) {
-                        if (isSelected) {
-                            Icon(
-                                imageVector = Icons.Default.Check,
-                                contentDescription = "Selected",
-                                tint = Color.White,
-                                modifier = Modifier.size(20.dp)
-                            )
-                        }
+        Spacer(modifier = Modifier.height(10.dp))
+
+        FlowRow(
+            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            verticalArrangement = Arrangement.spacedBy(8.dp),
+            modifier = Modifier.fillMaxWidth()
+        ) {
+            AppFontOption.entries.forEach { fontOption ->
+                val isSelected = SettingsManager.fontOption == fontOption
+                FilterChip(
+                    selected = isSelected,
+                    onClick = { SettingsManager.updateFontOption(context, fontOption) },
+                    label = {
+                        Text(
+                            text = fontOption.displayName,
+                            fontFamily = fontOption.fontFamily,
+                            fontWeight = FontWeight.SemiBold
+                        )
+                    },
+                    shape = RoundedCornerShape(18.dp),
+                    colors = FilterChipDefaults.filterChipColors(
+                        selectedContainerColor = MaterialTheme.colorScheme.primary,
+                        selectedLabelColor = MaterialTheme.colorScheme.onPrimary
+                    )
+                )
+            }
+        }
+
+        Spacer(modifier = Modifier.height(24.dp))
+
+        // 4. ACCENT COLOR PALETTE
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            Icon(
+                imageVector = Icons.Default.Palette,
+                contentDescription = null,
+                tint = MaterialTheme.colorScheme.primary,
+                modifier = Modifier.size(20.dp)
+            )
+            Spacer(modifier = Modifier.width(8.dp))
+            Text(
+                text = "Accent Color Theme",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+        }
+
+        Spacer(modifier = Modifier.height(12.dp))
+
+        Row(
+            modifier = Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.spacedBy(10.dp)
+        ) {
+            ColorAccentTheme.entries.forEach { accent ->
+                val isSelected = SettingsManager.accentTheme == accent
+                val accentColor = Color(accent.primaryHex)
+
+                Box(
+                    modifier = Modifier
+                        .weight(1f)
+                        .height(50.dp)
+                        .clip(RoundedCornerShape(16.dp))
+                        .background(accentColor)
+                        .border(
+                            width = if (isSelected) 3.dp else 0.dp,
+                            color = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                            shape = RoundedCornerShape(16.dp)
+                        )
+                        .clickable {
+                            SettingsManager.updateAccentTheme(context, accent)
+                        },
+                    contentAlignment = Alignment.Center
+                ) {
+                    if (isSelected) {
+                        Icon(
+                            imageVector = Icons.Default.Check,
+                            contentDescription = "Selected",
+                            tint = Color.White,
+                            modifier = Modifier.size(20.dp)
+                        )
                     }
                 }
             }

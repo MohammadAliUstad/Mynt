@@ -1,5 +1,6 @@
 package com.yourname.expensetracker
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.tween
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateListOf
 import androidx.compose.runtime.mutableStateOf
@@ -36,15 +38,34 @@ fun ExpenseTrackerRoot() {
 }
 
 /**
- * Main application content with floating bottom navigation bar, Settings screen slide/fade transition,
- * dedicated Theme settings transition, and full-screen voice overlay.
+ * Main application content with real-time Cloud Firestore database sync,
+ * system back navigation handling, floating bottom navigation bar,
+ * Settings screen slide/fade transition, dedicated Theme settings transition, and full-screen voice overlay.
  */
 @Composable
 fun ExpenseTrackerMainContent(
     onSignOut: () -> Unit
 ) {
-    // Shared in-memory list of expenses & incomes
+    // Shared in-memory and cloud-synced list of expenses & incomes
     val expenses = remember { mutableStateListOf<Expense>() }
+
+    // Logged-in user ID
+    val userId = AuthManager.currentUser?.uid
+
+    // Synchronize transactions with Cloud Firestore in real-time
+    DisposableEffect(userId) {
+        if (userId != null) {
+            val listener = FirestoreRepository.listenToUserTransactions(userId) { cloudList ->
+                expenses.clear()
+                expenses.addAll(cloudList)
+            }
+            onDispose {
+                listener.remove()
+            }
+        } else {
+            onDispose { }
+        }
+    }
 
     // Navigation tab state
     var selectedTab by remember { mutableStateOf(NavTab.HOME) }
@@ -57,6 +78,43 @@ fun ExpenseTrackerMainContent(
 
     // Dedicated Theme Settings Screen visibility
     var showThemeSettingsScreen by remember { mutableStateOf(false) }
+
+    // Lent & Borrowed Screen visibility
+    var showLentBorrowedScreen by remember { mutableStateOf(false) }
+
+    // Add Expense (manual entry) Screen visibility
+    var showAddExpenseScreen by remember { mutableStateOf(false) }
+
+    // Dedicated Back Handlers for Device System Back Button
+    // 00. Close Add Expense Screen overlay
+    BackHandler(enabled = showAddExpenseScreen) {
+        showAddExpenseScreen = false
+    }
+
+    // 0. Close Lent & Borrowed Screen overlay
+    BackHandler(enabled = showLentBorrowedScreen) {
+        showLentBorrowedScreen = false
+    }
+
+    // 1. Close Theme Settings Screen overlay
+    BackHandler(enabled = showThemeSettingsScreen) {
+        showThemeSettingsScreen = false
+    }
+
+    // 2. Close Settings Screen overlay
+    BackHandler(enabled = showSettingsScreen && !showThemeSettingsScreen) {
+        showSettingsScreen = false
+    }
+
+    // 3. Close Voice Screen overlay
+    BackHandler(enabled = showVoiceOverlay) {
+        showVoiceOverlay = false
+    }
+
+    // 4. Return to Home Tab if on Add, Stats, or Me tabs
+    BackHandler(enabled = selectedTab != NavTab.HOME && !showSettingsScreen && !showThemeSettingsScreen && !showVoiceOverlay) {
+        selectedTab = NavTab.HOME
+    }
 
     // Index mapping for tab animation direction
     val tabIndices = mapOf(
@@ -96,19 +154,52 @@ fun ExpenseTrackerMainContent(
                 label = "tabContentAnimation"
             ) { targetTab ->
                 when (targetTab) {
-                    NavTab.HOME -> HomeScreen(expenses = expenses)
-                    NavTab.ADD -> AddExpenseScreen(
-                        onBackClick = { selectedTab = NavTab.HOME },
-                        onSaveExpense = { newTransaction ->
-                            expenses.add(0, newTransaction)
-                            selectedTab = NavTab.HOME
+                    NavTab.HOME -> HomeScreen(
+                        expenses = expenses,
+                        userName = AuthManager.userDisplayName,
+                        onAddTransactionClick = { showAddExpenseScreen = true },
+                        onLentBorrowedClick = { showLentBorrowedScreen = true },
+                        onUpdateTransaction = { updatedTransaction ->
+                            val index = expenses.indexOfFirst { it.id == updatedTransaction.id }
+                            if (index != -1) {
+                                expenses[index] = updatedTransaction
+                            }
+                            if (userId != null) {
+                                FirestoreRepository.addTransaction(userId, updatedTransaction)
+                            }
+                        },
+                        onDeleteTransaction = { deletedTransaction ->
+                            expenses.removeIf { it.id == deletedTransaction.id }
+                            if (userId != null) {
+                                FirestoreRepository.deleteTransaction(userId, deletedTransaction.id)
+                            }
+                        }
+                    )
+
+                    NavTab.ADD -> TransactionsScreen(
+                        expenses = expenses,
+                        onUpdateTransaction = { updatedTransaction ->
+                            val index = expenses.indexOfFirst { it.id == updatedTransaction.id }
+                            if (index != -1) {
+                                expenses[index] = updatedTransaction
+                            }
+                            if (userId != null) {
+                                FirestoreRepository.addTransaction(userId, updatedTransaction)
+                            }
+                        },
+                        onDeleteTransaction = { deletedTransaction ->
+                            expenses.removeIf { it.id == deletedTransaction.id }
+                            if (userId != null) {
+                                FirestoreRepository.deleteTransaction(userId, deletedTransaction.id)
+                            }
                         }
                     )
 
                     NavTab.STATS -> StatsScreen(expenses = expenses)
                     NavTab.ME -> ProfileScreen(
                         onSignOutClick = onSignOut,
-                        onNavigateToSettings = { showSettingsScreen = true }
+                        onNavigateToSettings = { showSettingsScreen = true },
+                        onNavigateToInsights = { selectedTab = NavTab.STATS }
                     )
                 }
             }
@@ -120,6 +211,44 @@ fun ExpenseTrackerMainContent(
                 onMicClick = { showVoiceOverlay = true },
                 modifier = Modifier.align(Alignment.BottomCenter)
             )
+
+            // Add Expense (manual entry) Screen Overlay with slide from/to right + fade animation
+            AnimatedVisibility(
+                visible = showAddExpenseScreen,
+                enter = slideInHorizontally(tween(300)) { width -> width } + fadeIn(tween(300)),
+                exit = slideOutHorizontally(tween(300)) { width -> width } + fadeOut(tween(300))
+            ) {
+                Box(
+                    modifier = Modifier
+                        .fillMaxSize()
+                        .background(MaterialTheme.colorScheme.background)
+                ) {
+                    AddExpenseScreen(
+                        onBackClick = { showAddExpenseScreen = false },
+                        onSaveExpense = { newTransaction ->
+                            if (userId != null) {
+                                FirestoreRepository.addTransaction(userId, newTransaction)
+                            } else {
+                                expenses.add(0, newTransaction)
+                            }
+                            showAddExpenseScreen = false
+                        }
+                    )
+                }
+            }
+
+            // Lent & Borrowed Screen Overlay with slide from/to right + fade animation
+            AnimatedVisibility(
+                visible = showLentBorrowedScreen,
+                enter = slideInHorizontally(tween(300)) { width -> width } + fadeIn(tween(300)),
+                exit = slideOutHorizontally(tween(300)) { width -> width } + fadeOut(tween(300))
+            ) {
+                LentBorrowedScreen(
+                    expenses = expenses,
+                    onBackClick = { showLentBorrowedScreen = false },
+                    onTransactionClick = { }
+                )
+            }
 
             // Settings Screen Overlay with slide from/to right + fade animation
             AnimatedVisibility(
@@ -153,7 +282,11 @@ fun ExpenseTrackerMainContent(
                 VoiceScreen(
                     onCloseClick = { showVoiceOverlay = false },
                     onSaveTransaction = { newTransaction ->
-                        expenses.add(0, newTransaction)
+                        if (userId != null) {
+                            FirestoreRepository.addTransaction(userId, newTransaction)
+                        } else {
+                            expenses.add(0, newTransaction)
+                        }
                         showVoiceOverlay = false
                     }
                 )
