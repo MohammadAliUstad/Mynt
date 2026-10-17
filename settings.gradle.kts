@@ -22,5 +22,8 @@ dependencyResolutionManagement {
     }
 }
 
-rootProject.name = "ExpenseTracker"
+rootProject.name = "Mynt"
 include(":app")
+include(":theme")
+include(":domain")
+include(":database")

@@ -9,7 +9,7 @@
       "client_info": {
         "mobilesdk_app_id": "1:753392886200:android:9a5e7fe5b4efb7b892ef4d",
         "android_client_info": {
-          "package_name": "com.yourname.expensetracker"
+          "package_name": "com.yugentech.mynt"
         }
       },
       "oauth_client": [
@@ -17,7 +17,7 @@
           "client_id": "753392886200-3v865dqgtn1959pr19vr9ctkp4fkd628.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
-            "package_name": "com.yourname.expensetracker",
+            "package_name": "com.yugentech.mynt",
             "certificate_hash": "4111ef01e72e0333cf72886cab979f7bbbd48993"
           }
         },
