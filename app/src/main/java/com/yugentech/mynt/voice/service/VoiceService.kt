@@ -59,8 +59,10 @@ class VoiceService(
             val displayFormatStandard = SimpleDateFormat("dd MMM yyyy", Locale.getDefault())
             val monthYearFormat = SimpleDateFormat("MMMM yyyy", Locale.getDefault())
 
-            // Prepare candidate transactions for Gemini
-            val candidateList = recentExpenses.take(40).map { exp ->
+            // Candidates sent to Gemini. Updates are only accepted if they match one of these.
+            val candidates = recentExpenses.sortedByDescending { it.timestamp }.take(60)
+
+            val candidateList = candidates.map { exp ->
                 val isoDate = try {
                     val parsed = displayFormatStandard.parse(exp.date)
                         ?: SimpleDateFormat("d MMM yyyy", Locale.getDefault()).parse(exp.date)
@@ -101,7 +103,13 @@ class VoiceService(
 
                 val action = (m["action"] as? String)?.uppercase() ?: "CREATE"
                 val matchedId = (m["id"] as? String)?.trim().orEmpty()
-                val isUpdate = action == "UPDATE" && matchedId.isNotBlank()
+
+                // Only a real update if Gemini's id matches a saved entry we sent it.
+                // Otherwise it is treated as a new entry, so a bad id never writes anywhere odd.
+                val original: Expense? = if (action == "UPDATE" && matchedId.isNotBlank()) {
+                    candidates.firstOrNull { it.id == matchedId }
+                } else null
+                val isUpdate = original != null
 
                 val typeStr = (m["type"] as? String)?.uppercase()
                 val type = when (typeStr) {
@@ -135,21 +143,32 @@ class VoiceService(
                     Date()
                 }
 
-                // If updating, preserve the original Firestore ID so set() overwrites the existing document
-                val finalId = if (isUpdate) matchedId else UUID.randomUUID().toString()
+                val expense = if (original != null) {
+                    // Start from the saved entry so hidden fields (timestamp etc.) are preserved,
+                    // then apply the new values. Same id means the save overwrites the original.
+                    original.copy(
+                        title = title,
+                        amount = amount,
+                        category = category,
+                        date = displayFormatStandard.format(parsedDate),
+                        monthYear = monthYearFormat.format(parsedDate),
+                        type = type,
+                        personName = personName
+                    )
+                } else {
+                    Expense(
+                        id = UUID.randomUUID().toString(),
+                        title = title,
+                        amount = amount,
+                        category = category,
+                        date = displayFormatStandard.format(parsedDate),
+                        monthYear = monthYearFormat.format(parsedDate),
+                        type = type,
+                        personName = personName
+                    )
+                }
 
-                val expense = Expense(
-                    id = finalId,
-                    title = title,
-                    amount = amount,
-                    category = category,
-                    date = displayFormatStandard.format(parsedDate),
-                    monthYear = monthYearFormat.format(parsedDate),
-                    type = type,
-                    personName = personName
-                )
-
-                ParsedVoiceResult(expense = expense, isUpdate = isUpdate)
+                ParsedVoiceResult(expense = expense, isUpdate = isUpdate, previous = original)
             }
 
             Result.success(parsedResults)

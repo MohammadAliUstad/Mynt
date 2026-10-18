@@ -9,6 +9,7 @@ sealed class AppScreen(val route: String) {
     data object LentBorrowed : AppScreen("lent_borrowed")
     data object Voice : AppScreen("voice")
     data object Appearance : AppScreen("appearance")
+    data object Split : AppScreen("split")
 
     /** Adding and editing an entry: pass [ARG_ID] to edit, or [ARG_TYPE] to start a new one. */
     data object Transaction : AppScreen("transaction?$ARG_ID={$ARG_ID}&$ARG_TYPE={$ARG_TYPE}") {

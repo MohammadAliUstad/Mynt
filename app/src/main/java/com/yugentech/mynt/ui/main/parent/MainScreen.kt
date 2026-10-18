@@ -12,6 +12,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -20,6 +21,7 @@ import androidx.compose.material3.SnackbarHostState
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.remember
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.rememberSaveableStateHolder
 import androidx.compose.runtime.setValue
@@ -34,6 +36,8 @@ import com.yugentech.mynt.database.model.TransactionType
 import com.yugentech.mynt.transactions.viewmodel.TransactionsViewModel
 import com.yugentech.mynt.ui.main.components.FloatingBottomBar
 import com.yugentech.mynt.ui.main.components.MyntTab
+import com.yugentech.mynt.ui.split.parent.SplitBillScreen
+import com.yugentech.mynt.ui.split.parent.SplitScreenState
 import com.yugentech.mynt.ui.tabs.historyScreen.parent.TransactionsScreen
 import com.yugentech.mynt.ui.tabs.homeScreen.parent.HomeScreen
 import com.yugentech.mynt.ui.tabs.profileScreen.parent.ProfileScreen
@@ -66,6 +70,10 @@ fun MainScreen(
     val saveableStateHolder = rememberSaveableStateHolder()
     val hazeState = rememberHazeState()
 
+    // Split bill opens inside this screen, so the bottom bar never leaves and nothing flickers.
+    var showSplit by remember { mutableStateOf(false) }
+    val splitState = remember { SplitScreenState() }
+
     // Room for the floating bar under the last row of every tab.
     val navBarInset = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
     val bottomPadding = navBarInset + 104.dp
@@ -76,6 +84,9 @@ fun MainScreen(
 
     BackHandler(enabled = selectedTab != MyntTab.HOME) {
         selectedTab = MyntTab.HOME
+    }
+    BackHandler(enabled = showSplit) {
+        showSplit = false
     }
 
     fun selectTab(tab: MyntTab) {
@@ -96,57 +107,80 @@ fun MainScreen(
                 .background(MaterialTheme.colorScheme.background)
         ) {
             AnimatedContent(
-                targetState = selectedTab,
+                targetState = showSplit,
+                modifier = Modifier.fillMaxSize(),
                 transitionSpec = {
-                    val forward = targetState.ordinal > initialState.ordinal
-                    val spec = tween<androidx.compose.ui.unit.IntOffset>(320)
-                    (slideInHorizontally(spec) { w -> if (forward) w / 4 else -w / 4 } + fadeIn(tween(320))) togetherWith
-                        (slideOutHorizontally(spec) { w -> if (forward) -w / 4 else w / 4 } + fadeOut(tween(200)))
+                    if (targetState) {
+                        (slideInHorizontally(tween(320)) { w -> w / 4 } + fadeIn(tween(320))) togetherWith
+                                (slideOutHorizontally(tween(320)) { w -> -w / 4 } + fadeOut(tween(200)))
+                    } else {
+                        (slideInHorizontally(tween(320)) { w -> -w / 4 } + fadeIn(tween(320))) togetherWith
+                                (slideOutHorizontally(tween(320)) { w -> w / 4 } + fadeOut(tween(200)))
+                    }
                 },
-                label = "tabContent"
-            ) { tab ->
-                saveableStateHolder.SaveableStateProvider(tab) {
-                    when (tab) {
-                        MyntTab.HOME -> HomeScreen(
-                            expenses = expenses,
-                            userName = userName,
-                            monthlyBudget = settings.monthlyBudget,
-                            bottomPadding = bottomPadding,
-                            onSetBudget = settingsViewModel::setMonthlyBudget,
-                            onAddTransaction = onAddTransaction,
-                            onVoiceClick = onVoiceClick,
-                            onLentBorrowedClick = onLentBorrowedClick,
-                            onTransactionClick = onEditTransaction,
-                            onDeleteTransaction = onDeleteTransaction,
-                            onSeeAllClick = { selectTab(MyntTab.HISTORY) },
-                            onProfileClick = { selectTab(MyntTab.ME) }
-                        )
+                label = "splitOverlay"
+            ) { splitOpen ->
+                if (splitOpen) {
+                    SplitBillScreen(
+                        state = splitState,
+                        onBackClick = { showSplit = false }
+                    )
+                } else {
+                    AnimatedContent(
+                        targetState = selectedTab,
+                        transitionSpec = {
+                            val forward = targetState.ordinal > initialState.ordinal
+                            val spec = tween<androidx.compose.ui.unit.IntOffset>(320)
+                            (slideInHorizontally(spec) { w -> if (forward) w / 4 else -w / 4 } + fadeIn(tween(320))) togetherWith
+                                    (slideOutHorizontally(spec) { w -> if (forward) -w / 4 else w / 4 } + fadeOut(tween(200)))
+                        },
+                        label = "tabContent"
+                    ) { tab ->
+                        saveableStateHolder.SaveableStateProvider(tab) {
+                            when (tab) {
+                                MyntTab.HOME -> HomeScreen(
+                                    expenses = expenses,
+                                    userName = userName,
+                                    monthlyBudget = settings.monthlyBudget,
+                                    bottomPadding = bottomPadding,
+                                    onSetBudget = settingsViewModel::setMonthlyBudget,
+                                    onAddTransaction = onAddTransaction,
+                                    onVoiceClick = onVoiceClick,
+                                    onLentBorrowedClick = onLentBorrowedClick,
+                                    onSplitClick = { showSplit = true },
+                                    onTransactionClick = onEditTransaction,
+                                    onDeleteTransaction = onDeleteTransaction,
+                                    onSeeAllClick = { selectTab(MyntTab.HISTORY) },
+                                    onProfileClick = { selectTab(MyntTab.ME) }
+                                )
 
-                        MyntTab.HISTORY -> TransactionsScreen(
-                            expenses = expenses,
-                            bottomPadding = bottomPadding,
-                            onTransactionClick = onEditTransaction,
-                            onDeleteTransaction = onDeleteTransaction,
-                            onAddClick = { onAddTransaction(TransactionType.EXPENSE) }
-                        )
+                                MyntTab.HISTORY -> TransactionsScreen(
+                                    expenses = expenses,
+                                    bottomPadding = bottomPadding,
+                                    onTransactionClick = onEditTransaction,
+                                    onDeleteTransaction = onDeleteTransaction,
+                                    onAddClick = { onAddTransaction(TransactionType.EXPENSE) }
+                                )
 
-                        MyntTab.STATS -> StatsScreen(
-                            expenses = expenses,
-                            bottomPadding = bottomPadding
-                        )
+                                MyntTab.STATS -> StatsScreen(
+                                    expenses = expenses,
+                                    bottomPadding = bottomPadding
+                                )
 
-                        MyntTab.ME -> ProfileScreen(
-                            userName = userName,
-                            userEmail = userEmail,
-                            expenses = expenses,
-                            settingsViewModel = settingsViewModel,
-                            bottomPadding = bottomPadding,
-                            onShowMessage = onShowMessage,
-                            onSignOutClick = onSignOut,
-                            onExitClick = onExitApp,
-                            onAppearanceClick = onAppearanceClick,
-                            onLentBorrowedClick = onLentBorrowedClick
-                        )
+                                MyntTab.ME -> ProfileScreen(
+                                    userName = userName,
+                                    userEmail = userEmail,
+                                    expenses = expenses,
+                                    settingsViewModel = settingsViewModel,
+                                    bottomPadding = bottomPadding,
+                                    onShowMessage = onShowMessage,
+                                    onSignOutClick = onSignOut,
+                                    onExitClick = onExitApp,
+                                    onAppearanceClick = onAppearanceClick,
+                                    onLentBorrowedClick = onLentBorrowedClick
+                                )
+                            }
+                        }
                     }
                 }
             }
@@ -163,9 +197,18 @@ fun MainScreen(
             currentTab = selectedTab,
             onTabSelected = ::selectTab,
             onAddClick = { onAddTransaction(TransactionType.EXPENSE) },
-            onVoiceClick = onVoiceClick,
+            onVoiceClick = {
+                if (showSplit) onShowMessage("Voice for splits comes in the next step")
+                else onVoiceClick()
+            },
             hazeState = hazeState,
-            modifier = Modifier.align(Alignment.BottomCenter)
+            // Lifts with the keyboard on the Split screen, so the button is never hidden.
+            modifier = Modifier
+                .align(Alignment.BottomCenter)
+                .then(if (showSplit) Modifier.imePadding() else Modifier),
+            splitMode = showSplit,
+            splitLabel = splitState.barLabel,
+            onSplitClick = splitState::onBarButton
         )
     }
 }
