@@ -40,6 +40,7 @@ import androidx.compose.material.icons.rounded.Mic
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Surface
+import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -48,11 +49,14 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.scale
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.TransformOrigin
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.role
 import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.yugentech.mynt.ui.shared.components.orb.OrbEnergy
 import dev.chrisbanes.haze.HazeState
@@ -86,6 +90,9 @@ fun glassHazeStyle(): HazeStyle {
  *
  * Tapping History again once it's open turns its icon into "+" and starts a new entry,
  * the way Amatyaa's Clients and Files tabs do.
+ *
+ * In [splitMode] the pill is painted over and becomes one button labelled [splitLabel];
+ * the orb never moves.
  */
 @Composable
 fun FloatingBottomBar(
@@ -94,7 +101,10 @@ fun FloatingBottomBar(
     onAddClick: () -> Unit,
     onVoiceClick: () -> Unit,
     hazeState: HazeState?,
-    modifier: Modifier = Modifier
+    modifier: Modifier = Modifier,
+    splitMode: Boolean = false,
+    splitLabel: String = "Split",
+    onSplitClick: () -> Unit = {}
 ) {
     Box(
         modifier = modifier
@@ -111,7 +121,10 @@ fun FloatingBottomBar(
                 currentTab = currentTab,
                 onTabSelected = onTabSelected,
                 onAddClick = onAddClick,
-                hazeState = hazeState
+                hazeState = hazeState,
+                splitMode = splitMode,
+                splitLabel = splitLabel,
+                onSplitClick = onSplitClick
             )
 
             VoiceOrbButton(onClick = onVoiceClick)
@@ -124,7 +137,10 @@ private fun TabsPill(
     currentTab: MyntTab,
     onTabSelected: (MyntTab) -> Unit,
     onAddClick: () -> Unit,
-    hazeState: HazeState?
+    hazeState: HazeState?,
+    splitMode: Boolean,
+    splitLabel: String,
+    onSplitClick: () -> Unit
 ) {
     val tabs = MyntTab.entries
     val selectedIndex = tabs.indexOf(currentTab).coerceAtLeast(0)
@@ -134,6 +150,14 @@ private fun TabsPill(
         animationSpec = spring(dampingRatio = 0.78f, stiffness = Spring.StiffnessMediumLow),
         label = "indicatorOffset"
     )
+
+    // The "paint": a block of colour sweeps across the pill from left to right.
+    val paint by animateFloatAsState(
+        targetValue = if (splitMode) 1f else 0f,
+        animationSpec = tween(420, easing = FastOutSlowInEasing),
+        label = "splitPaint"
+    )
+    val labelAlpha = ((paint - 0.45f) / 0.55f).coerceIn(0f, 1f)
 
     val pillShape = RoundedCornerShape(50)
 
@@ -148,40 +172,82 @@ private fun TabsPill(
         shadowElevation = 0.dp,
         tonalElevation = 0.dp
     ) {
-        Box(
-            modifier = Modifier
-                .fillMaxHeight()
-                .padding(horizontal = PillHPadding),
-            contentAlignment = Alignment.CenterStart
-        ) {
+        Box {
+            // The four tabs, fading out as the paint covers them.
             Box(
                 modifier = Modifier
-                    .offset(x = indicatorOffset)
-                    .width(TabCell)
-                    .height(IndicatorHeight)
-                    .clip(CircleShape)
-                    .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+                    .fillMaxHeight()
+                    .padding(horizontal = PillHPadding)
+                    .graphicsLayer { alpha = 1f - paint },
+                contentAlignment = Alignment.CenterStart
+            ) {
+                Box(
+                    modifier = Modifier
+                        .offset(x = indicatorOffset)
+                        .width(TabCell)
+                        .height(IndicatorHeight)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.primary.copy(alpha = 0.28f))
+                )
+
+                Row(
+                    modifier = Modifier.fillMaxHeight(),
+                    verticalAlignment = Alignment.CenterVertically
+                ) {
+                    tabs.forEach { tab ->
+                        val isSelected = currentTab == tab
+                        TabIcon(
+                            tab = tab,
+                            isSelected = isSelected,
+                            modifier = Modifier.width(TabCell),
+                            onClick = {
+                                when {
+                                    !isSelected -> onTabSelected(tab)
+                                    tab == MyntTab.HISTORY -> onAddClick()
+                                }
+                            }
+                        )
+                    }
+                }
+            }
+
+            // The paint itself, growing from the left edge.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer {
+                        scaleX = paint
+                        transformOrigin = TransformOrigin(0f, 0.5f)
+                    }
+                    .background(MaterialTheme.colorScheme.primary)
             )
 
-            Row(
-                modifier = Modifier.fillMaxHeight(),
-                verticalAlignment = Alignment.CenterVertically
+            // The button label, fading in once the paint has mostly covered the pill.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .graphicsLayer { alpha = labelAlpha },
+                contentAlignment = Alignment.Center
             ) {
-                tabs.forEach { tab ->
-                    val isSelected = currentTab == tab
-                    TabIcon(
-                        tab = tab,
-                        isSelected = isSelected,
-                        modifier = Modifier.width(TabCell),
-                        onClick = {
-                            when {
-                                !isSelected -> onTabSelected(tab)
-                                tab == MyntTab.HISTORY -> onAddClick()
-                            }
-                        }
+                AnimatedContent(
+                    targetState = splitLabel,
+                    transitionSpec = { fadeIn(tween(200)) togetherWith fadeOut(tween(150)) },
+                    label = "splitLabel"
+                ) { label ->
+                    Text(
+                        text = label,
+                        style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                        color = MaterialTheme.colorScheme.onPrimary
                     )
                 }
             }
+
+            // Catches taps only while the pill is a button, so the tabs work normally otherwise.
+            Box(
+                modifier = Modifier
+                    .matchParentSize()
+                    .then(if (splitMode) Modifier.clickable(onClick = onSplitClick) else Modifier)
+            )
         }
     }
 }
@@ -223,9 +289,9 @@ private fun TabIcon(
                 transitionSpec = {
                     val entering = targetState
                     val enter = slideInVertically(tween(260, easing = FastOutSlowInEasing)) { h -> if (entering) h else -h } +
-                        fadeIn(tween(200))
+                            fadeIn(tween(200))
                     val exit = slideOutVertically(tween(260, easing = FastOutSlowInEasing)) { h -> if (entering) -h else h } +
-                        fadeOut(tween(200))
+                            fadeOut(tween(200))
                     enter togetherWith exit using SizeTransform(clip = false)
                 },
                 label = "historyAddSwap"

@@ -85,6 +85,7 @@ import com.yugentech.mynt.ui.shared.util.formatAmount
 import com.yugentech.mynt.ui.shared.util.formatAmountShort
 import java.time.LocalTime
 import java.time.YearMonth
+import androidx.compose.material.icons.rounded.Groups
 
 private const val RECENT_COUNT = 5
 
@@ -102,6 +103,7 @@ fun HomeScreen(
     onAddTransaction: (TransactionType) -> Unit,
     onVoiceClick: () -> Unit,
     onLentBorrowedClick: () -> Unit,
+    onSplitClick: () -> Unit,
     onTransactionClick: (Expense) -> Unit,
     onDeleteTransaction: (Expense) -> Unit,
     onSeeAllClick: () -> Unit,
@@ -157,7 +159,8 @@ fun HomeScreen(
             onExpense = { onAddTransaction(TransactionType.EXPENSE) },
             onIncome = { onAddTransaction(TransactionType.INCOME) },
             onVoice = onVoiceClick,
-            onLentBorrowed = onLentBorrowedClick
+            onLentBorrowed = onLentBorrowedClick,
+            onSplit = onSplitClick
         )
 
         AnimatedVisibility(visible = insights.isNotEmpty(), enter = fadeIn(), exit = fadeOut()) {
@@ -521,32 +524,39 @@ private fun QuickActions(
     onExpense: () -> Unit,
     onIncome: () -> Unit,
     onVoice: () -> Unit,
-    onLentBorrowed: () -> Unit
+    onLentBorrowed: () -> Unit,
+    onSplit: () -> Unit
 ) {
     Row(
         modifier = Modifier.fillMaxWidth(),
-        horizontalArrangement = Arrangement.SpaceBetween
+        horizontalArrangement = Arrangement.spacedBy(4.dp)
     ) {
-        QuickAction("Expense", Icons.Rounded.Remove, FinanceColors.expense, onExpense)
-        QuickAction("Income", Icons.Rounded.Add, FinanceColors.income, onIncome)
-        QuickAction("Voice", Icons.Rounded.Mic, MaterialTheme.colorScheme.primary, onVoice)
-        QuickAction("Lend/Owe", Icons.Rounded.Handshake, FinanceColors.lent, onLentBorrowed)
+        QuickAction("Expense", Icons.Rounded.Remove, FinanceColors.expense, onExpense, Modifier.weight(1f))
+        QuickAction("Income", Icons.Rounded.Add, FinanceColors.income, onIncome, Modifier.weight(1f))
+        QuickAction("Voice", Icons.Rounded.Mic, MaterialTheme.colorScheme.primary, onVoice, Modifier.weight(1f))
+        QuickAction("Lend/Owe", Icons.Rounded.Handshake, FinanceColors.lent, onLentBorrowed, Modifier.weight(1f))
+        QuickAction("Split bill", Icons.Rounded.Groups, FinanceColors.borrowed, onSplit, Modifier.weight(1f))
     }
 }
 
 @Composable
-private fun QuickAction(label: String, icon: ImageVector, tint: Color, onClick: () -> Unit) {
+private fun QuickAction(
+    label: String,
+    icon: ImageVector,
+    tint: Color,
+    onClick: () -> Unit,
+    modifier: Modifier = Modifier
+) {
     Column(
-        modifier = Modifier
-            .widthIn(min = 72.dp)
+        modifier = modifier
             .clip(RoundedCornerShape(20.dp))
             .clickable(onClick = onClick)
-            .padding(vertical = 6.dp, horizontal = 4.dp),
+            .padding(vertical = 6.dp, horizontal = 2.dp),
         horizontalAlignment = Alignment.CenterHorizontally
     ) {
         Box(
             modifier = Modifier
-                .size(58.dp)
+                .size(54.dp)
                 .clip(RoundedCornerShape(20.dp))
                 .background(tint.copy(alpha = 0.14f)),
             contentAlignment = Alignment.Center
@@ -556,8 +566,9 @@ private fun QuickAction(label: String, icon: ImageVector, tint: Color, onClick: 
         Spacer(Modifier.height(6.dp))
         Text(
             label,
-            style = MaterialTheme.typography.labelLarge,
-            color = MaterialTheme.colorScheme.onSurface
+            style = MaterialTheme.typography.labelMedium,
+            color = MaterialTheme.colorScheme.onSurface,
+            maxLines = 1
         )
     }
 }

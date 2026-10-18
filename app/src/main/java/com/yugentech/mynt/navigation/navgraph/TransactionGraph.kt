@@ -3,7 +3,9 @@ package com.yugentech.mynt.navigation.navgraph
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
@@ -73,7 +75,13 @@ fun NavGraphBuilder.transactionGraph(
         )
     }
 
-    composable(AppScreen.LentBorrowed.route) {
+    composable(
+        route = AppScreen.LentBorrowed.route,
+        enterTransition = { slideInHorizontally(tween(300)) { it } + fadeIn(tween(300)) },
+        exitTransition = { slideOutHorizontally(tween(300)) { -it / 4 } + fadeOut(tween(300)) },
+        popEnterTransition = { slideInHorizontally(tween(300)) { -it / 4 } + fadeIn(tween(300)) },
+        popExitTransition = { slideOutHorizontally(tween(300)) { it } + fadeOut(tween(300)) }
+    ) {
         val expenses by transactionsViewModel.transactions.collectAsStateWithLifecycle()
 
         LentBorrowedScreen(

@@ -12,6 +12,11 @@ import com.yugentech.mynt.navigation.screen.AppScreen
 import com.yugentech.mynt.transactions.viewmodel.TransactionsViewModel
 import com.yugentech.mynt.ui.main.parent.MainScreen
 import com.yugentech.mynt.ui.tabs.profileScreen.viewmodel.SettingsViewModel
+import androidx.compose.animation.core.tween
+import androidx.compose.animation.fadeIn
+import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
+import androidx.compose.animation.slideOutHorizontally
 
 fun NavGraphBuilder.mainGraph(
     navController: NavHostController,
@@ -23,7 +28,18 @@ fun NavGraphBuilder.mainGraph(
     onShowMessage: (String) -> Unit,
     context: Context
 ) {
-    composable(AppScreen.Main.route) {
+    composable(
+        route = AppScreen.Main.route,
+        // Going to Split bill fades instead of sliding, so the bottom bar doesn't appear to move.
+        exitTransition = {
+            if (targetState.destination.route == AppScreen.Split.route) fadeOut(tween(250))
+            else slideOutHorizontally(tween(250)) { -1000 } + fadeOut(tween(250))
+        },
+        popEnterTransition = {
+            if (initialState.destination.route == AppScreen.Split.route) fadeIn(tween(250))
+            else slideInHorizontally(tween(250)) { -1000 } + fadeIn(tween(250))
+        }
+    ) {
         MainScreen(
             authViewModel = authViewModel,
             transactionsViewModel = transactionsViewModel,

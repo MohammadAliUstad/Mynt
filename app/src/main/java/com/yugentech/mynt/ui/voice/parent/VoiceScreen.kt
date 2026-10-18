@@ -375,6 +375,7 @@ private fun Hint(text: String) {
 @Composable
 private fun ParsedResultCard(result: ParsedVoiceResult, onRemove: () -> Unit) {
     val expense = result.expense
+    val previous = result.previous
     MyntCard(modifier = Modifier.fillMaxWidth(), contentPadding = 14.dp, shape = RoundedCornerShape(22.dp)) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             CategoryBadge(style = categoryStyle(expense.category, expense.type))
@@ -398,6 +399,13 @@ private fun ParsedResultCard(result: ParsedVoiceResult, onRemove: () -> Unit) {
                     style = MaterialTheme.typography.bodySmall,
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
+                if (result.isUpdate && previous != null && previous.amount != expense.amount) {
+                    Text(
+                        "Was ${signedAmount(previous)}",
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
             }
             Text(
                 signedAmount(expense),

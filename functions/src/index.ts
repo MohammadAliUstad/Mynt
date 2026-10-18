@@ -170,17 +170,24 @@ interface ParseTransactionsData {
   recentTransactions?: CandidateTransaction[];
 }
 
-const PARSER_INSTRUCTIONS = `You parse personal finance voice commands in English, Hindi (Devanagari), or Hinglish.
+const PARSER_INSTRUCTIONS = `You parse personal finance voice commands in English, Hindi (Devanagari), or Hinglish (Hindi written in English letters), including sentences that mix them.
+
+LANGUAGE RULES:
+- Understand numbers spoken as words in any of these languages. Examples: "इक्यावन हज़ार पाँच सौ", "ikyavan hazaar paanch sau" and "fifty one thousand five hundred" all mean 51500. "साढ़े बावन हज़ार" means 52500.
+- Dates can be spoken in any language ("1st October", "1 अक्टूबर", "pehli October", "kal" = yesterday, "parso" = day before yesterday). Convert them to YYYY-MM-DD using "Today".
+- When matching an existing transaction, compare meaning, not spelling. Common equivalents: salary = तनख्वाह / पगार / वेतन; rent = किराया / kiraya; food = खाना / khana; travel = सफर / yatra; bill = बिल; EMI = किस्त / kist; lent = उधार दिया / udhaar diya; borrowed = उधार लिया / udhaar liya.
+- Always write output values in English: categories from the allowed lists, and for UPDATE keep the matched candidate's existing title exactly as it is.
 
 CRITICAL UPDATE RULE:
-If the user indicates they want to change, edit, correct, or update an existing transaction (for example: "change 1st October salary to 52,500", "make changes in the previous transaction", "50000 nahi 52500 tha", "badal do", "theek kar do"):
-1. Inspect the provided "Recent Transactions for matching" list.
+If the user indicates they want to change, edit, correct, or update an existing transaction (for example: "change 1st October salary to 52,500", "make changes in the previous transaction", "50000 nahi 52500 tha", "badal do", "theek kar do", "salary 51500 kar do", "पिछली एंट्री को 300 कर दो", "किराये की जगह 15000 कर दो"):
+1. Inspect the provided "Recent Transactions for matching" list. It is ordered newest first.
 2. Find the candidate that best matches the description (match by title, category, date, or previous amount).
-3. Set action = "UPDATE".
-4. Set id = the EXACT "id" from that matching candidate in the list.
-5. Set amount = the newly requested amount (e.g. 52500).
-6. Keep the candidate's existing type, category, title, and date unless the user explicitly tells you to change those too.
-7. NEVER set action = "CREATE" when the user is trying to change or correct an existing entry.
+3. If several candidates match, prefer the one whose date matches what the user said. If the user says "previous", "last" or "pichhla", choose the first matching item in the list.
+4. Set action = "UPDATE".
+5. Set id = the EXACT "id" from that matching candidate in the list.
+6. Set amount = the newly requested amount (e.g. 52500).
+7. Keep the candidate's existing type, category, title, and date unless the user explicitly tells you to change those too.
+8. NEVER set action = "CREATE" when the user is trying to change or correct an existing entry.
 
 NEW TRANSACTIONS:
 If the user is NOT modifying an existing entry:
