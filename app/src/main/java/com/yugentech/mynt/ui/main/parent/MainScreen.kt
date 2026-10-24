@@ -1,5 +1,12 @@
 package com.yugentech.mynt.ui.main.parent
 
+import kotlinx.coroutines.launch
+import com.yugentech.mynt.ui.tabs.historyScreen.parent.TransactionsFilterRequest
+import com.yugentech.mynt.ui.shared.components.displayTitle
+import com.yugentech.mynt.domain.model.HeroCardKind
+import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.material3.SnackbarResult
+import androidx.compose.material3.SnackbarDuration
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedContent
 import androidx.compose.animation.core.tween
@@ -12,7 +19,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.navigationBars
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.MaterialTheme
@@ -38,6 +44,7 @@ import com.yugentech.mynt.ui.main.components.FloatingBottomBar
 import com.yugentech.mynt.ui.main.components.MyntTab
 import com.yugentech.mynt.ui.split.parent.SplitBillScreen
 import com.yugentech.mynt.ui.split.parent.SplitScreenState
+import com.yugentech.mynt.ui.split.parent.SplitTab
 import com.yugentech.mynt.ui.tabs.historyScreen.parent.TransactionsScreen
 import com.yugentech.mynt.ui.tabs.homeScreen.parent.HomeScreen
 import com.yugentech.mynt.ui.tabs.profileScreen.parent.ProfileScreen
@@ -45,6 +52,8 @@ import com.yugentech.mynt.ui.tabs.profileScreen.viewmodel.SettingsViewModel
 import com.yugentech.mynt.ui.tabs.statsScreen.parent.StatsScreen
 import dev.chrisbanes.haze.hazeSource
 import dev.chrisbanes.haze.rememberHazeState
+import androidx.compose.runtime.LaunchedEffect
+import com.yugentech.mynt.ui.split.parent.SplitSession
 
 @Composable
 fun MainScreen(
@@ -67,26 +76,52 @@ fun MainScreen(
     val settings by settingsViewModel.settingsConfiguration.collectAsStateWithLifecycle()
 
     var selectedTab by rememberSaveable { mutableStateOf(MyntTab.HOME) }
+    val scope = rememberCoroutineScope()
+    // Set when a tile on a Home card is tapped; History applies it once, then clears it.
+    var filterRequest by remember { mutableStateOf<TransactionsFilterRequest?>(null) }
+    val visibleHeroCards = remember(settings.hiddenHeroCards) {
+        HeroCardKind.entries.filterNot { it in settings.hiddenHeroCards }
+    }
     val saveableStateHolder = rememberSaveableStateHolder()
     val hazeState = rememberHazeState()
 
-    // Split bill opens inside this screen, so the bottom bar never leaves and nothing flickers.
-    var showSplit by remember { mutableStateOf(false) }
-    val splitState = remember { SplitScreenState() }
+    // The voice screen can ask for the Split bill screen to open after "Add bill".
+    var showSplit by remember { mutableStateOf(SplitSession.openOnHome) }
+    val splitState = SplitSession.state
 
-    // Room for the floating bar under the last row of every tab.
+    LaunchedEffect(SplitSession.openOnHome) {
+        if (SplitSession.openOnHome) {
+            showSplit = true
+            SplitSession.openOnHome = false
+        }
+    }
+
     val navBarInset = with(LocalDensity.current) { WindowInsets.navigationBars.getBottom(this).toDp() }
     val bottomPadding = navBarInset + 104.dp
 
-    // Blank until Firebase sign-in is wired up; screens fall back to a neutral greeting.
     val userName = authState.userData?.name.orEmpty()
     val userEmail = authState.userData?.email ?: "Signed in on this device"
 
-    BackHandler(enabled = selectedTab != MyntTab.HOME) {
-        selectedTab = MyntTab.HOME
-    }
-    BackHandler(enabled = showSplit) {
-        showSplit = false
+    BackHandler(enabled = selectedTab != MyntTab.HOME) { selectedTab = MyntTab.HOME }
+    BackHandler(enabled = showSplit) { showSplit = false }
+    BackHandler(enabled = showSplit && splitState.selectedSettledId != null) { splitState.clearSelection() }
+    BackHandler(enabled = showSplit && splitState.panelRecord != null) { splitState.closePanel() }
+
+    // Swipe-to-delete with an Undo. This lives here, next to the snackbar, so the snackbar's
+    // coroutine belongs to this screen and can't be cancelled when the deleted row disappears.
+    fun deleteWithUndo(expense: Expense) {
+        transactionsViewModel.deleteTransaction(expense)
+        scope.launch {
+            snackbarHostState.currentSnackbarData?.dismiss()
+            val result = snackbarHostState.showSnackbar(
+                message = "Deleted ${expense.displayTitle}",
+                actionLabel = "Undo",
+                duration = SnackbarDuration.Long
+            )
+            if (result == SnackbarResult.ActionPerformed) {
+                transactionsViewModel.restoreTransaction(expense)
+            }
+        }
     }
 
     fun selectTab(tab: MyntTab) {
@@ -99,7 +134,6 @@ fun MainScreen(
             .fillMaxSize()
             .background(MaterialTheme.colorScheme.background)
     ) {
-        // Everything the bar floats over is the haze source, so it frosts as content scrolls by.
         Box(
             modifier = Modifier
                 .fillMaxSize()
@@ -149,24 +183,29 @@ fun MainScreen(
                                     onLentBorrowedClick = onLentBorrowedClick,
                                     onSplitClick = { showSplit = true },
                                     onTransactionClick = onEditTransaction,
-                                    onDeleteTransaction = onDeleteTransaction,
+                                    onDeleteTransaction = { deleteWithUndo(it) },
                                     onSeeAllClick = { selectTab(MyntTab.HISTORY) },
-                                    onProfileClick = { selectTab(MyntTab.ME) }
+                                    onProfileClick = { selectTab(MyntTab.ME) },
+                                    cardAnimationStyle = settings.cardAnimationStyle,
+                                    heroCards = visibleHeroCards,
+                                    onSummaryClick = { type, month ->
+                                        filterRequest = TransactionsFilterRequest(type, month)
+                                        selectTab(MyntTab.HISTORY)
+                                    }
                                 )
-
                                 MyntTab.HISTORY -> TransactionsScreen(
                                     expenses = expenses,
                                     bottomPadding = bottomPadding,
                                     onTransactionClick = onEditTransaction,
-                                    onDeleteTransaction = onDeleteTransaction,
-                                    onAddClick = { onAddTransaction(TransactionType.EXPENSE) }
+                                    onDeleteTransaction = { deleteWithUndo(it) },
+                                    onAddClick = { onAddTransaction(TransactionType.EXPENSE) },
+                                    filterRequest = filterRequest,
+                                    onFilterRequestConsumed = { filterRequest = null }
                                 )
-
                                 MyntTab.STATS -> StatsScreen(
                                     expenses = expenses,
                                     bottomPadding = bottomPadding
                                 )
-
                                 MyntTab.ME -> ProfileScreen(
                                     userName = userName,
                                     userEmail = userEmail,
@@ -197,18 +236,20 @@ fun MainScreen(
             currentTab = selectedTab,
             onTabSelected = ::selectTab,
             onAddClick = { onAddTransaction(TransactionType.EXPENSE) },
-            onVoiceClick = {
-                if (showSplit) onShowMessage("Voice for splits comes in the next step")
-                else onVoiceClick()
-            },
+            onVoiceClick = onVoiceClick,
             hazeState = hazeState,
-            // Lifts with the keyboard on the Split screen, so the button is never hidden.
-            modifier = Modifier
-                .align(Alignment.BottomCenter)
-                .then(if (showSplit) Modifier.imePadding() else Modifier),
+            modifier = Modifier.align(Alignment.BottomCenter),
             splitMode = showSplit,
             splitLabel = splitState.barLabel,
-            onSplitClick = splitState::onBarButton
+            onSplitClick = {
+                if (showSplit) {
+                    splitState.onBarButton()
+                }
+            },
+            deleteMode = showSplit &&
+                    splitState.tab == SplitTab.SETTLED &&
+                    splitState.selectedSettledId != null,
+            onDeleteClick = { splitState.requestDelete() }
         )
     }
 }

@@ -240,7 +240,7 @@ object FinanceInsights {
             result += Insight(
                 title = "${top.category} leads at ${(top.share * 100).toInt()}%",
                 detail = "${formatAmount(top.amount)} across ${top.count} " +
-                    (if (top.count == 1) "entry" else "entries") + ".",
+                        (if (top.count == 1) "entry" else "entries") + ".",
                 tone = if (top.share >= 0.5f) Insight.Tone.WARNING else Insight.Tone.NEUTRAL
             )
         }

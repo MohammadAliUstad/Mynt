@@ -220,6 +220,12 @@ fun SwipeableTransactionRow(
 ) {
     val state = rememberSwipeToDismissBoxState()
 
+    LaunchedEffect(expense.id) {
+        if (state.currentValue != SwipeToDismissBoxValue.Settled) {
+            state.snapTo(SwipeToDismissBoxValue.Settled)
+        }
+    }
+
     SwipeToDismissBox(
         state = state,
         modifier = modifier,

@@ -65,20 +65,20 @@ class FinanceInsightsTest {
     }
 
     @Test
-    fun `summary only counts the requested month and separates types`() {
+    fun `summary only counts the requested month and keeps borrowed out of income`() {
         val all = listOf(
             entry(100.0, LocalDate.of(2026, 10, 1)),
             entry(50.0, LocalDate.of(2026, 10, 2)),
             entry(1000.0, LocalDate.of(2026, 10, 3), TransactionType.INCOME, "Salary"),
-            entry(200.0, LocalDate.of(2026, 10, 4), TransactionType.LENT, person = "Asha"),
+            entry(200.0, LocalDate.of(2026, 10, 4), TransactionType.BORROWED, BORROWING, person = "John"),
             entry(999.0, LocalDate.of(2026, 9, 30))
         )
         val s = FinanceInsights.summary(all, oct)
         assertEquals(150.0, s.expense, 0.001)
-        assertEquals(1000.0, s.income, 0.001)
-        assertEquals(200.0, s.lent, 0.001)
-        assertEquals(850.0, s.net, 0.001)
-        assertEquals(0.85f, s.savingsRate!!, 0.001f)
+        assertEquals(1000.0, s.income, 0.001) // only Income entries; borrowed is tracked separately
+        assertEquals(200.0, s.borrowed, 0.001)
+        assertEquals(0.0, s.lent, 0.001)
+        assertEquals(850.0, s.net, 0.001) // 1000 income - 150 spent
         assertEquals(4, s.transactionCount)
     }
 

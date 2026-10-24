@@ -115,7 +115,7 @@ fun AppNavHost(
                         launchSingleTop = true
                     }
                 }
-            } else if (currentRoute != AppScreen.SignIn.route) {
+            } else if (currentRoute != AppScreen.SignIn.route && currentRoute != AppScreen.SignUp.route) {
                 navController.navigate(AppScreen.SignIn.route) {
                     popUpTo(0) { inclusive = true }
                     launchSingleTop = true
@@ -155,6 +155,7 @@ fun AppNavHost(
         authGraph(
             navController = navController,
             authViewModel = authViewModel,
+            webClientId = webClientId,
             context = context
         )
         mainGraph(

@@ -17,7 +17,7 @@ val databaseModule = module {
             .build()
     }
 
-    single {
-        get<AppDatabase>().transactionDao()
-    }
+    single { get<AppDatabase>().transactionDao() }
+
+    single { get<AppDatabase>().splitDao() }
 }

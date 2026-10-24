@@ -1,7 +1,9 @@
 package com.yugentech.mynt.ui.tabs.profileScreen.viewmodel
 
+import com.yugentech.mynt.domain.model.HeroCardKind
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.yugentech.mynt.domain.model.CardAnimationStyle
 import com.yugentech.mynt.domain.model.SettingsConfiguration
 import com.yugentech.mynt.user.datastore.UserDataStore
 import com.yugentech.theme.service.HapticService
@@ -40,6 +42,14 @@ class SettingsViewModel(
 
     fun setReminderTime(hour: Int, minute: Int) {
         viewModelScope.launch { userDataStore.setReminderTime(hour, minute) }
+    }
+
+    fun setCardAnimationStyle(style: CardAnimationStyle) {
+        viewModelScope.launch { userDataStore.setCardAnimationStyle(style) }
+    }
+
+    fun setHeroCardVisible(card: HeroCardKind, visible: Boolean) {
+        viewModelScope.launch { userDataStore.setHeroCardVisible(card, visible) }
     }
 
     fun setMonthlyBudget(amount: Double) {

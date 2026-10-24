@@ -53,6 +53,7 @@ class AndroidAudioRecorder(
         audioRecord = recorder
 
         if (recorder.state != AudioRecord.STATE_INITIALIZED) {
+            release(recorder)
             close(IllegalStateException("AudioRecord initialization failed."))
             return@callbackFlow
         }
@@ -71,28 +72,38 @@ class AndroidAudioRecorder(
                 if (read > 0) {
                     val chunk = audioBuffer.copyOf(read)
                     trySend(chunk)
+                } else if (read < 0) {
+                    // Break cleanly if the OS silences the mic when backgrounded
+                    close(IllegalStateException("AudioRecord read error: $read"))
+                    break
                 }
             }
         }
 
         awaitClose {
             job.cancel()
-            stopRecording()
+            // Release only the recorder this flow created. If a new recording has already started,
+            // `audioRecord` points at the new one and must be left alone.
+            release(recorder)
         }
     }
 
     fun stopRecording() {
-        audioRecord?.let {
+        audioRecord?.let { release(it) }
+    }
+
+    private fun release(recorder: AudioRecord) {
+        if (recorder.state != AudioRecord.STATE_UNINITIALIZED) {
             try {
-                if (it.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
-                    it.stop()
+                if (recorder.recordingState == AudioRecord.RECORDSTATE_RECORDING) {
+                    recorder.stop()
                 }
             } catch (e: Exception) {
                 // Ignore stop error
             } finally {
-                it.release()
+                recorder.release()
             }
         }
-        audioRecord = null
+        if (audioRecord === recorder) audioRecord = null
     }
 }

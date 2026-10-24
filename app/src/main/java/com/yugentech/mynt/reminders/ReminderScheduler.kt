@@ -44,14 +44,20 @@ object ReminderScheduler {
     }
 
     private fun schedule(context: Context, hour: Int, minute: Int, playful: Boolean) {
+        ensureChannel(context)
         val alarmManager = context.getSystemService(AlarmManager::class.java) ?: return
-        alarmManager.setInexactRepeating(
-            AlarmManager.RTC_WAKEUP,
-            nextTrigger(hour, minute),
-            AlarmManager.INTERVAL_DAY,
-            pendingIntent(context, playful)
-        )
-        Timber.d("Daily reminder scheduled for %02d:%02d", hour, minute)
+        val triggerAtMillis = nextTrigger(hour, minute)
+
+        try {
+            alarmManager.setAndAllowWhileIdle(
+                AlarmManager.RTC_WAKEUP,
+                triggerAtMillis,
+                pendingIntent(context, playful)
+            )
+            Timber.d("Daily reminder scheduled for %02d:%02d", hour, minute)
+        } catch (e: Exception) {
+            Timber.e(e, "Error scheduling daily reminder alarm")
+        }
     }
 
     private fun cancel(context: Context) {

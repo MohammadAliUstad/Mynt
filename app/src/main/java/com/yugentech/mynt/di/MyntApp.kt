@@ -9,9 +9,11 @@ import com.yugentech.mynt.di.modules.config.themeModule
 import com.yugentech.mynt.di.modules.core.dataStoreModule
 import com.yugentech.mynt.di.modules.core.databaseModule
 import com.yugentech.mynt.di.modules.core.firebaseModule
+import com.yugentech.mynt.di.modules.finance.splitModule
 import com.yugentech.mynt.di.modules.finance.transactionsModule
 import com.yugentech.mynt.di.modules.finance.voiceModule
 import com.yugentech.mynt.reminders.ReminderScheduler
+import com.yugentech.mynt.ui.split.parent.SplitSession
 import com.yugentech.mynt.user.datastore.UserDataStore
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -49,14 +51,15 @@ class MyntApp : Application() {
                 databaseModule,
                 firebaseModule,
                 transactionsModule,
-                voiceModule
+                voiceModule,
+                splitModule // Added split sync module
             )
         }
 
+        SplitSession.initializeSync(appScope)
         keepRemindersInSync()
     }
 
-    // Whenever the reminder settings change, from anywhere, the daily alarm follows.
     private fun keepRemindersInSync() {
         ReminderScheduler.ensureChannel(this)
         get<UserDataStore>().settingsConfiguration

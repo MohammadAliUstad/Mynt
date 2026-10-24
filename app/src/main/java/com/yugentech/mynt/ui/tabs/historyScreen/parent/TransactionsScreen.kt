@@ -79,6 +79,16 @@ import java.time.YearMonth
 import java.time.format.DateTimeFormatter
 import java.util.Locale
 
+/**
+ * Asks the History screen to open on a particular type and month, e.g. when you tap "Income" on
+ * the Home card. [nonce] makes two identical taps in a row count as two separate requests.
+ */
+data class TransactionsFilterRequest(
+    val type: TransactionType,
+    val month: YearMonth,
+    val nonce: Long = System.nanoTime()
+)
+
 private enum class TypeFilter(val label: String, val type: TransactionType?) {
     ALL("All", null),
     EXPENSE("Spent", TransactionType.EXPENSE),
@@ -103,7 +113,9 @@ fun TransactionsScreen(
     bottomPadding: Dp,
     onTransactionClick: (Expense) -> Unit,
     onDeleteTransaction: (Expense) -> Unit,
-    onAddClick: () -> Unit
+    onAddClick: () -> Unit,
+    filterRequest: TransactionsFilterRequest? = null,
+    onFilterRequestConsumed: () -> Unit = {}
 ) {
     val focusManager = LocalFocusManager.current
 
@@ -115,14 +127,27 @@ fun TransactionsScreen(
     var query by rememberSaveable { mutableStateOf("") }
     var sortMenuOpen by remember { mutableStateOf(false) }
 
+    // Applies a filter requested from elsewhere (the Home card), then tells the caller it's been used
+    // so coming back to this tab later doesn't reset whatever you've changed since.
+    LaunchedEffect(filterRequest) {
+        filterRequest?.let { request ->
+            typeFilter = TypeFilter.entries.first { it.type == request.type }
+            categoryFilter = null
+            month = request.month
+            query = ""
+            searchOpen = false
+            onFilterRequestConsumed()
+        }
+    }
+
     val isSearching = query.isNotBlank()
 
     val filtered = remember(expenses, month, typeFilter, categoryFilter, sortOrder, query) {
         val base = if (isSearching) expenses else FinanceInsights.inMonth(expenses, month)
         val matches = base.filter { tx ->
             (typeFilter.type == null || tx.type == typeFilter.type) &&
-                (categoryFilter == null || tx.category.equals(categoryFilter, ignoreCase = true)) &&
-                (!isSearching || tx.matches(query))
+                    (categoryFilter == null || tx.category.equals(categoryFilter, ignoreCase = true)) &&
+                    (!isSearching || tx.matches(query))
         }
         when (sortOrder) {
             SortOrder.NEWEST -> matches.sortedByDateDescending()
@@ -326,9 +351,11 @@ fun TransactionsScreen(
 private fun Expense.matches(query: String): Boolean {
     val q = query.trim()
     if (q.isEmpty()) return true
+    // Also searches inside the hidden AI note (e.g. "office", "colleague", "online")!
     val textMatch = title.contains(q, ignoreCase = true) ||
-        category.contains(q, ignoreCase = true) ||
-        personName.contains(q, ignoreCase = true)
+            category.contains(q, ignoreCase = true) ||
+            personName.contains(q, ignoreCase = true) ||
+            note.contains(q, ignoreCase = true)
     // "250" also finds 250.00 and 1,250: handy when you remember the amount, not the name.
     val digits = q.filter { it.isDigit() }
     val amountMatch = digits.isNotEmpty() && amount.toLong().toString().contains(digits)

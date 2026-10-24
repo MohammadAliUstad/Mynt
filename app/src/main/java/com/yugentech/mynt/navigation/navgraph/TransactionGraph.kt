@@ -18,6 +18,7 @@ import androidx.navigation.navArgument
 import com.yugentech.mynt.database.model.Expense
 import com.yugentech.mynt.database.model.TransactionType
 import com.yugentech.mynt.navigation.screen.AppScreen
+import com.yugentech.mynt.split.model.SplitBill
 import com.yugentech.mynt.transactions.insights.FinanceInsights
 import com.yugentech.mynt.transactions.viewmodel.TransactionsViewModel
 import com.yugentech.mynt.ui.tabs.profileScreen.viewmodel.SettingsViewModel
@@ -26,6 +27,7 @@ import com.yugentech.mynt.ui.transactions.lentBorrowed.parent.LentBorrowedScreen
 import com.yugentech.mynt.ui.voice.parent.VoiceScreen
 import com.yugentech.mynt.voice.viewmodel.VoiceViewModel
 import org.koin.androidx.compose.koinViewModel
+import com.yugentech.mynt.ui.split.parent.SplitSession
 
 fun NavGraphBuilder.transactionGraph(
     navController: NavHostController,
@@ -34,7 +36,6 @@ fun NavGraphBuilder.transactionGraph(
     onDeleteWithUndo: (Expense) -> Unit,
     onShowMessage: (String) -> Unit
 ) {
-    // The editor rises from the bottom like a sheet
     composable(
         route = AppScreen.Transaction.route,
         arguments = listOf(
@@ -54,7 +55,6 @@ fun NavGraphBuilder.transactionGraph(
         val existing = remember(id, expenses) { id?.let { wanted -> expenses.firstOrNull { it.id == wanted } } }
         val people = remember(expenses) { FinanceInsights.personBalances(expenses).map { it.name } }
 
-        // Wait for the list before filling the form, or an edit would open blank.
         if (id != null && existing == null) return@composable
 
         AddExpenseScreen(
@@ -100,7 +100,6 @@ fun NavGraphBuilder.transactionGraph(
         )
     }
 
-    // Voice input slides up from the bottom like a sheet
     composable(
         route = AppScreen.Voice.route,
         enterTransition = { slideInVertically(tween(300)) { it } + fadeIn(tween(300)) },
@@ -116,22 +115,39 @@ fun NavGraphBuilder.transactionGraph(
             existingExpenses = expenses,
             onCloseClick = { navController.popBackStack() },
             onConfirmTransactions = { results ->
-                // An update keeps the original's creation time, so it stays where it was in lists.
-                val byId = expenses.associateBy { it.id }
-                transactionsViewModel.saveTransactions(
-                    results.map { result ->
-                        val original = byId[result.expense.id]
-                        if (result.isUpdate && original != null) result.expense.copy(timestamp = original.timestamp)
-                        else result.expense
-                    }
-                )
-                settingsViewModel.confirm()
-                val updates = results.count { it.isUpdate }
-                val added = results.size - updates
+                val splits = results.filter { it.splitBill != null }
+                val entries = results.filter { it.expense != null }
+
+                if (entries.isNotEmpty()) {
+                    val byId = expenses.associateBy { it.id }
+                    val baseTime = System.currentTimeMillis()
+                    transactionsViewModel.saveTransactions(
+                        entries.mapIndexed { index, result ->
+                            val expense = result.expense!!
+                            val original = byId[expense.id]
+                            if (result.isUpdate && original != null) {
+                                expense.copy(timestamp = original.timestamp)
+                            } else {
+                                val ts = if (expense.timestamp > 0) expense.timestamp else (baseTime + (index * 10L))
+                                expense.copy(timestamp = ts)
+                            }
+                        }
+                    )
+                    settingsViewModel.confirm()
+                }
+
+                // Split bills go into the shared Split session; Home opens it on the Bill tab.
+                splits.forEach { result ->
+                    SplitSession.addVoiceBill(result.participants, result.splitBill!!)
+                }
+
+                val updates = entries.count { it.isUpdate }
+                val added = entries.size - updates
                 onShowMessage(
                     listOfNotNull(
                         if (added > 0) "Added $added" else null,
-                        if (updates > 0) "updated $updates" else null
+                        if (updates > 0) "updated $updates" else null,
+                        if (splits.isNotEmpty()) "split bill added" else null
                     ).joinToString(", ").replaceFirstChar { it.uppercase() }
                 )
                 navController.popBackStack()

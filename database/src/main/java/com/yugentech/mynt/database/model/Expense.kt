@@ -15,6 +15,8 @@ enum class TransactionType {
  *
  * [timestamp] is when the entry was first created; it is kept across edits so a corrected
  * entry doesn't jump to the top of the list.
+ * [note] holds the AI-generated contextual sentence (where, with whom, why) so the main
+ * [title] stays short and clean while full context is searchable and visible on the detail screen.
  */
 data class Expense(
     val id: String,
@@ -25,6 +27,7 @@ data class Expense(
     val monthYear: String,
     val type: TransactionType = TransactionType.EXPENSE,
     val personName: String = "",
+    val note: String = "",
     val timestamp: Long = System.currentTimeMillis()
 )
 

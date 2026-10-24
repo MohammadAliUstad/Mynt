@@ -1,4 +1,7 @@
 package com.yugentech.mynt.ui.config.appearance.parent
+import com.yugentech.mynt.ui.shared.components.hero.LocalHomeCardPreferences
+import com.yugentech.mynt.domain.model.HeroCardKind
+import androidx.compose.material.icons.filled.ViewCarousel
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.lifecycle.compose.collectAsStateWithLifecycle
@@ -9,6 +12,9 @@ import com.yugentech.theme.builder.getFontFamily
 import com.yugentech.theme.models.ThemeMode
 import com.yugentech.theme.MyntTheme
 import com.yugentech.theme.models.ThemeConfiguration
+import com.yugentech.mynt.domain.model.CardAnimationStyle
+import com.yugentech.mynt.ui.shared.components.hero.HeroCardBackground
+import com.yugentech.mynt.ui.shared.components.hero.rememberHeroClock
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -31,6 +37,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.automirrored.filled.ArrowBack
+import androidx.compose.material.icons.filled.AutoAwesome
 import androidx.compose.material.icons.filled.AutoMode
 import androidx.compose.material.icons.filled.Brightness6
 import androidx.compose.material.icons.filled.Check
@@ -56,7 +63,9 @@ import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.lerp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.tooling.preview.Preview
@@ -366,5 +375,185 @@ fun ThemeSettingsContent(themeViewModel: ThemeViewModel) {
                 }
             }
         }
+
+        // 5. HOME CARDS: which ones show, and how they animate
+        val homeCards = LocalHomeCardPreferences.current
+        if (homeCards != null) {
+            Spacer(modifier = Modifier.height(24.dp))
+            HomeCardsSection(
+                hidden = homeCards.hiddenCards,
+                onVisibleChange = homeCards.onCardVisibleChange
+            )
+            Spacer(modifier = Modifier.height(24.dp))
+            CardAnimationSection(
+                selected = homeCards.animationStyle,
+                onSelect = homeCards.onAnimationStyleChange
+            )
+        }
+    }
+}
+
+/** Live previews of each Home card animation, tap one to use it. */
+@Composable
+private fun CardAnimationSection(
+    selected: CardAnimationStyle,
+    onSelect: (CardAnimationStyle) -> Unit
+) {
+    val primary = MaterialTheme.colorScheme.primary
+    val onPrimary = MaterialTheme.colorScheme.onPrimary
+    val clock = rememberHeroClock()
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = Icons.Default.AutoAwesome,
+            contentDescription = null,
+            tint = primary,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column {
+            Text(
+                text = "Home Card Animation",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = "The moving background behind your balance cards",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
+        CardAnimationStyle.entries.chunked(2).forEach { rowStyles ->
+            Row(
+                modifier = Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(10.dp)
+            ) {
+                rowStyles.forEach { style ->
+                    val isSelected = style == selected
+                    val shape = RoundedCornerShape(18.dp)
+                    Box(
+                        modifier = Modifier
+                            .weight(1f)
+                            .height(88.dp)
+                            .clip(shape)
+                            .background(Brush.linearGradient(listOf(primary, lerp(primary, Color.Black, 0.28f))))
+                            .border(
+                                width = if (isSelected) 3.dp else 0.dp,
+                                color = if (isSelected) MaterialTheme.colorScheme.onSurface else Color.Transparent,
+                                shape = shape
+                            )
+                            .clickable { onSelect(style) }
+                    ) {
+                        HeroCardBackground(
+                            style = style,
+                            clock = clock,
+                            modifier = Modifier.matchParentSize()
+                        )
+                        Text(
+                            text = style.label,
+                            style = MaterialTheme.typography.labelLarge.copy(fontWeight = FontWeight.Bold),
+                            color = onPrimary,
+                            modifier = Modifier
+                                .align(Alignment.BottomStart)
+                                .padding(12.dp)
+                        )
+                        if (isSelected) {
+                            Icon(
+                                imageVector = Icons.Default.Check,
+                                contentDescription = "Selected",
+                                tint = onPrimary,
+                                modifier = Modifier
+                                    .align(Alignment.TopEnd)
+                                    .padding(8.dp)
+                                    .size(18.dp)
+                            )
+                        }
+                    }
+                }
+                if (rowStyles.size == 1) Spacer(modifier = Modifier.weight(1f))
+            }
+        }
+    }
+}
+
+/** Switch the Home cards on and off. At least one always stays on. */
+@Composable
+private fun HomeCardsSection(
+    hidden: Set<HeroCardKind>,
+    onVisibleChange: (HeroCardKind, Boolean) -> Unit
+) {
+    val visibleCount = HeroCardKind.entries.count { it !in hidden }
+
+    Row(verticalAlignment = Alignment.CenterVertically) {
+        Icon(
+            imageVector = Icons.Default.ViewCarousel,
+            contentDescription = null,
+            tint = MaterialTheme.colorScheme.primary,
+            modifier = Modifier.size(20.dp)
+        )
+        Spacer(modifier = Modifier.width(8.dp))
+        Column {
+            Text(
+                text = "Home Cards",
+                style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.Bold),
+                color = MaterialTheme.colorScheme.onBackground
+            )
+            Text(
+                text = "Choose which cards you can swipe between on Home",
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        }
+    }
+
+    Spacer(modifier = Modifier.height(12.dp))
+
+    Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+        HeroCardKind.entries.forEach { card ->
+            val shown = card !in hidden
+            val isLastOn = shown && visibleCount == 1
+            Row(
+                modifier = Modifier
+                    .fillMaxWidth()
+                    .clip(RoundedCornerShape(18.dp))
+                    .background(MaterialTheme.colorScheme.surfaceContainer)
+                    .clickable(enabled = !isLastOn) { onVisibleChange(card, !shown) }
+                    .padding(horizontal = 16.dp, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically
+            ) {
+                Column(modifier = Modifier.weight(1f)) {
+                    Text(
+                        text = card.label,
+                        style = MaterialTheme.typography.titleSmall.copy(fontWeight = FontWeight.SemiBold),
+                        color = MaterialTheme.colorScheme.onSurface
+                    )
+                    Text(
+                        text = card.description,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                }
+                Switch(
+                    checked = shown,
+                    onCheckedChange = { onVisibleChange(card, it) },
+                    enabled = !isLastOn
+                )
+            }
+        }
+    }
+
+    if (visibleCount == 1) {
+        Spacer(modifier = Modifier.height(8.dp))
+        Text(
+            text = "At least one card stays on.",
+            style = MaterialTheme.typography.bodySmall,
+            color = MaterialTheme.colorScheme.onSurfaceVariant,
+            modifier = Modifier.padding(start = 4.dp)
+        )
     }
 }

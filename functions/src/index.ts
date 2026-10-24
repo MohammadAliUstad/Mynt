@@ -65,11 +65,6 @@ export const transcribeVoice = onCall<TranscribeVoiceData>({
     const rawPcmBuffer = Buffer.from(rawBase64, "base64");
     const wavBuffer = pcmToWav(rawPcmBuffer, 16000, 1, 16);
 
-    logger.info("Sending PCM/WAV audio to Soniox STT API...", {
-      pcmLength: rawPcmBuffer.length,
-      wavLength: wavBuffer.length,
-    });
-
     const form = new FormData();
     form.append("file", wavBuffer, {
       filename: "speech.wav",
@@ -120,8 +115,6 @@ export const transcribeVoice = onCall<TranscribeVoiceData>({
     const textResult: string =
         data.text || (data.tokens ? data.tokens.map((t: any) => t.text).join("") : "");
 
-    logger.info("Soniox transcription successful:", {textResult});
-
     return {
       success: true,
       text: textResult.trim(),
@@ -146,13 +139,18 @@ export const transcribeVoice = onCall<TranscribeVoiceData>({
   }
 });
 
-// ===================== Gemini: parse / update transactions =====================
+// ===================== Gemini: parse transactions & split bills =====================
 
 const GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 const GEMINI_MODEL = "gemini-3.8-flash";
 
-const EXPENSE_CATEGORIES = ["Food", "Travel", "Shopping", "Bills", "Entertainment", "EMI", "Other"];
-const INCOME_CATEGORIES = ["Salary", "Freelance", "Gift", "Investment", "Other"];
+const EXPENSE_CATEGORIES = [
+  "Food", "Groceries", "Travel", "Shopping", "Bills", "Rent",
+  "Health", "Entertainment", "Education", "EMI", "Other",
+];
+const INCOME_CATEGORIES = [
+  "Salary", "Freelance", "Business", "Gift", "Investment", "Refund", "Other",
+];
 
 interface CandidateTransaction {
   id: string;
@@ -162,39 +160,87 @@ interface CandidateTransaction {
   date: string;
   type: string;
   personName?: string;
+  note?: string;
 }
 
 interface ParseTransactionsData {
   text?: string;
   today?: string;
   recentTransactions?: CandidateTransaction[];
+  activeParticipants?: string[];
 }
 
-const PARSER_INSTRUCTIONS = `You parse personal finance voice commands in English, Hindi (Devanagari), or Hinglish (Hindi written in English letters), including sentences that mix them.
+const PARSER_INSTRUCTIONS = `You are an ultra-smart personal finance voice parser for an app called Mynt. You understand English, Hindi (Devanagari), and Hinglish seamlessly.
 
-LANGUAGE RULES:
-- Understand numbers spoken as words in any of these languages. Examples: "इक्यावन हज़ार पाँच सौ", "ikyavan hazaar paanch sau" and "fifty one thousand five hundred" all mean 51500. "साढ़े बावन हज़ार" means 52500.
-- Dates can be spoken in any language ("1st October", "1 अक्टूबर", "pehli October", "kal" = yesterday, "parso" = day before yesterday). Convert them to YYYY-MM-DD using "Today".
-- When matching an existing transaction, compare meaning, not spelling. Common equivalents: salary = तनख्वाह / पगार / वेतन; rent = किराया / kiraya; food = खाना / khana; travel = सफर / yatra; bill = बिल; EMI = किस्त / kist; lent = उधार दिया / udhaar diya; borrowed = उधार लिया / udhaar liya.
-- Always write output values in English: categories from the allowed lists, and for UPDATE keep the matched candidate's existing title exactly as it is.
+LANGUAGE & NUMBER RULES:
+- Understand numbers spoken as words in any language ("इक्यावन हज़ार पाँच सौ", "ikyavan hazaar paanch sau", "fifty one thousand five hundred" = 51500).
+- Convert relative dates ("1st October", "kal" = yesterday, "parso" = day before yesterday) to YYYY-MM-DD using "Today".
+- Always output English values: categories from the allowed lists, and capitalized names in Latin script.
 
+===================================================
+TITLE vs. NOTE RULE (CRITICAL FOR ALL TRANSACTIONS):
+===================================================
+Every transaction has a "title" (shown in the main list) and a "note" (shown as an AI insight sentence on the detail screen and used for search):
+1. "title" MUST be a short, clean 1-to-2 word noun naming the core item only. NEVER include verbs, locations, or people in the title!
+   - User says "Bought a chair online for 2300" -> title = "Chair", category = "Shopping" (NEVER "Bought a chair online").
+   - User says "Spent 50 rupees on coffee in office with a colleague" -> title = "Coffee", category = "Food".
+   - User says "Paid 450 for cab to airport" -> title = "Cab", category = "Travel".
+2. "note" MUST be a clean, natural sentence describing what the AI understood about the context (where, how, with whom, or why), written in a helpful summary style (not a raw transcript):
+   - For "Bought a chair online for 2300" -> note = "This chair was purchased online."
+   - For "Spent 50 rupees on coffee in office with a colleague" -> note = "This coffee was spent in the office with a colleague."
+   - For "Paid 450 for cab to airport" -> note = "This cab was taken to the airport."
+   - If the user gave NO extra context (e.g., just "Spent 20 on tea"), set note = "".
+
+===================================================
+SMART CLARIFICATION & AMBIGUITY RULES (HIGHEST PRIORITY):
+===================================================
+Note: If the user's text ends with a follow-up answer (like ". Split bill", ". Regular expense", ". No, save without name", or a person's name), use that follow-up to resolve the rule and DO NOT ask again!
+
+1. MISSING AMOUNT:
+If the user mentions an expense, income, lent, borrowed, or split bill, but forgets to state the amount (or amount is 0):
+- Return entries = [] and set missingInfo = "How much was the amount?"
+
+2. LENT / BORROWED MISSING PERSON NAME:
+If the user says they lent or borrowed money (e.g., "I lent 2000 for rent" or "I borrowed 500"), and NO person's name is mentioned:
+- Check if the user already answered to skip the name (e.g., text contains "save without name", "without name", "skip", or ends with ". No").
+- If they have NOT answered yet: Return entries = [] and set missingInfo to EXACTLY:
+  - For LENT: "Do you want to give the name of the person that you lent the money to?"
+  - For BORROWED: "Do you want to give the name of the person that you borrowed the money from?"
+- If they answered "No" / "Save without name": Create the LENT/BORROWED entry with personName = "", title = "Lent" (or the reason like "Rent"), and note = "Lent for rent without a specified name."
+- If they answered with a name (e.g., "I borrowed 2000 for rent. Rahul"): Create the entry with personName = "Rahul", title = "Rent", and note = "Borrowed from Rahul for rent."
+
+3. AMBIGUOUS GROUP EXPENSE vs. REGULAR EXPENSE:
+If the user mentions spending money involving other people (e.g., "Spent 50 on coffee in office with a colleague", "Had dinner with a friend for 400") where it is NOT explicitly clear whether they want to split the bill or just log a personal expense:
+- Check if it's an obvious split bill (mentions "split", "shares", "paid by X", "each"). If obvious, go to SPLIT BILL RULE.
+- Check if the user already clarified at the end of the text (e.g., text ends with ". Split bill", ". Split", ". Regular expense", or ". Expense").
+- If NOT clarified yet: Return entries = [] and set missingInfo to EXACTLY:
+  "Is this a split bill, or just a regular expense?"
+- If clarified as "Regular expense" (or "Expense"): Create a regular EXPENSE entry following the TITLE vs. NOTE RULE (e.g., title = "Coffee", category = "Food", note = "This coffee was spent in the office with a colleague.").
+- If clarified as "Split bill" (or "Split"): Follow the SPLIT BILL RULE below. If no specific friend names were given (e.g., "with a colleague"), use participants = ["You", "Colleague"].
+
+===================================================
+SPLIT BILL RULE:
+===================================================
+If the user describes a confirmed group expense shared between people:
+1. Set action = "SPLIT_BILL" and type = "SPLIT_BILL".
+2. Set title = short 1-2 word item name (e.g., "Lunch", "Coffee", "Dinner").
+3. Set amount = total bill amount.
+4. Set paidBy = the person who paid ("You" if unspecified or if the speaker paid).
+5. Set participants = ALL people involved, including "You".
+6. Set excluded = ONLY people who didn't share the cost. Otherwise [].
+
+===================================================
 CRITICAL UPDATE RULE:
-If the user indicates they want to change, edit, correct, or update an existing transaction (for example: "change 1st October salary to 52,500", "make changes in the previous transaction", "50000 nahi 52500 tha", "badal do", "theek kar do", "salary 51500 kar do", "पिछली एंट्री को 300 कर दो", "किराये की जगह 15000 कर दो"):
-1. Inspect the provided "Recent Transactions for matching" list. It is ordered newest first.
-2. Find the candidate that best matches the description (match by title, category, date, or previous amount).
-3. If several candidates match, prefer the one whose date matches what the user said. If the user says "previous", "last" or "pichhla", choose the first matching item in the list.
-4. Set action = "UPDATE".
-5. Set id = the EXACT "id" from that matching candidate in the list.
-6. Set amount = the newly requested amount (e.g. 52500).
-7. Keep the candidate's existing type, category, title, and date unless the user explicitly tells you to change those too.
-8. NEVER set action = "CREATE" when the user is trying to change or correct an existing entry.
+===================================================
+If the user wants to edit/correct an existing transaction (e.g., "change 1st October salary to 52,500", "make changes in the previous transaction"):
+1. Inspect "Recent Transactions for matching" (newest first).
+2. Set action = "UPDATE", id = exact candidate "id", and update the requested fields while keeping the rest intact.
 
-NEW TRANSACTIONS:
-If the user is NOT modifying an existing entry:
-- Set action = "CREATE".
-- Set id = "".
-- For LENT: Category "Lending". Set personName and title to the recipient's name if specified, otherwise title = "Lent".
-- For BORROWED: Category "Borrowing". Set personName and title to the lender's name if specified, otherwise title = "Borrowed".
+===================================================
+CATEGORIES FOR NEW TRANSACTIONS:
+===================================================
+- For LENT: Category = "Lending".
+- For BORROWED: Category = "Borrowing".
 - For INCOME: Category from ${INCOME_CATEGORIES.join(", ")}.
 - For EXPENSE: Category from ${EXPENSE_CATEGORIES.join(", ")}.
 `;
@@ -207,18 +253,29 @@ const PARSER_SCHEMA = {
       items: {
         type: "OBJECT",
         properties: {
-          action: {type: "STRING", enum: ["CREATE", "UPDATE"]},
+          action: {type: "STRING", enum: ["CREATE", "UPDATE", "SPLIT_BILL", "CLARIFY"]},
           id: {type: "STRING"},
-          type: {type: "STRING", enum: ["EXPENSE", "INCOME", "LENT", "BORROWED"]},
+          type: {type: "STRING", enum: ["EXPENSE", "INCOME", "LENT", "BORROWED", "SPLIT_BILL"]},
           title: {type: "STRING"},
+          note: {type: "STRING"},
           personName: {type: "STRING"},
           amount: {type: "NUMBER"},
           category: {type: "STRING"},
           date: {type: "STRING"},
+          paidBy: {type: "STRING"},
+          participants: {
+            type: "ARRAY",
+            items: {type: "STRING"},
+          },
+          excluded: {
+            type: "ARRAY",
+            items: {type: "STRING"},
+          },
         },
-        required: ["action", "type", "title", "amount", "category", "date"],
+        required: ["action", "type", "title", "amount", "date"],
       },
     },
+    missingInfo: {type: "STRING"},
   },
   required: ["entries"],
 };
@@ -248,16 +305,21 @@ export const parseTransactions = onCall<ParseTransactionsData>({
       `\nRecent Transactions for matching:\n${JSON.stringify(candidateList)}` :
       "";
 
-  try {
-    logger.info("Sending text to Gemini for parsing...", {spokenText, today, candidatesCount: candidateList.length});
+  const participants = Array.isArray(request.data.activeParticipants) ?
+      request.data.activeParticipants.map((p) => String(p).trim()).filter(Boolean) :
+      [];
+  const participantContext = participants.length > 0 ?
+      `\nActive participants already in the split session: ${participants.join(", ")}` :
+      "";
 
+  try {
     const response = await axios.post(
         `${GEMINI_BASE}/models/${GEMINI_MODEL}:generateContent`,
         {
           systemInstruction: {parts: [{text: PARSER_INSTRUCTIONS}]},
           contents: [{
             role: "user",
-            parts: [{text: `Today: ${today}${candidateContext}\nSpoken command: "${spokenText}"`}],
+            parts: [{text: `Today: ${today}${candidateContext}${participantContext}\nSpoken command: "${spokenText}"`}],
           }],
           generationConfig: {
             temperature: 0,
@@ -276,10 +338,30 @@ export const parseTransactions = onCall<ParseTransactionsData>({
     const cleaned = rawText.replace(/```json|```/g, "").trim();
     const parsed = JSON.parse(cleaned);
 
+    const missingInfo = String(parsed.missingInfo || "").trim();
+    if (missingInfo) {
+      return {success: true, action: "CLARIFY", missingInfo, entries: []};
+    }
+
     const entries = (Array.isArray(parsed.entries) ? parsed.entries : [])
         .map((e: any) => {
-          const action = String(e.action).toUpperCase() === "UPDATE" ? "UPDATE" : "CREATE";
-          const rawType = String(e.type).toUpperCase();
+          const rawAction = String(e.action || "").toUpperCase();
+          const rawType = String(e.type || "").toUpperCase();
+
+          if (rawAction === "SPLIT_BILL" || rawType === "SPLIT_BILL") {
+            return {
+              action: "SPLIT_BILL",
+              type: "SPLIT_BILL",
+              title: String(e.title || "Split Bill").trim(),
+              amount: Number(e.amount),
+              date: dateRegex.test(String(e.date)) ? String(e.date) : today,
+              paidBy: String(e.paidBy || "You").trim(),
+              participants: Array.isArray(e.participants) ? e.participants.map((p: any) => String(p).trim()) : ["You"],
+              excluded: Array.isArray(e.excluded) ? e.excluded.map((p: any) => String(p).trim()) : [],
+            };
+          }
+
+          const action = (rawAction === "UPDATE" || rawAction === "CLARIFY") ? rawAction : "CREATE";
           const type = (rawType === "LENT" || rawType === "BORROWED" || rawType === "INCOME") ? rawType : "EXPENSE";
 
           let category = "Other";
@@ -295,12 +377,14 @@ export const parseTransactions = onCall<ParseTransactionsData>({
 
           const personName = String(e.personName || "").trim();
           const title = String(e.title || (personName ? personName : category)).trim();
+          const note = String(e.note || "").trim();
 
           return {
             action,
             id: String(e.id || "").trim(),
             type,
             title,
+            note,
             personName,
             amount: Number(e.amount),
             category,
@@ -308,8 +392,6 @@ export const parseTransactions = onCall<ParseTransactionsData>({
           };
         })
         .filter((e: any) => Number.isFinite(e.amount) && e.amount > 0);
-
-    logger.info("Gemini parsing output:", {entries});
 
     return {success: true, entries};
   } catch (error: any) {
@@ -319,5 +401,111 @@ export const parseTransactions = onCall<ParseTransactionsData>({
       message: error?.message,
     });
     throw new HttpsError("internal", error?.response?.data?.error?.message || error?.message || "Parsing failed.");
+  }
+});
+
+// ===================== Gemini: settle-up message =====================
+
+interface SettleBill {
+  title?: string;
+  amount?: number;
+  paidBy?: string;
+  date?: string;
+}
+
+interface SettleTransfer {
+  from?: string;
+  to?: string;
+  amount?: number;
+}
+
+interface GenerateSettleMessageData {
+  settledOn?: string;
+  currencySymbol?: string;
+  people?: string[];
+  bills?: SettleBill[];
+  transfers?: SettleTransfer[];
+}
+
+const SETTLE_MESSAGE_INSTRUCTIONS = `You write a short, friendly message that the user will send to their friends in a group chat after settling a shared-expense split.
+
+RULES:
+- "You" in the data is the user, who is the sender. Write in first person: say "I" or "me" instead of "You".
+- Use ONLY the numbers and names given. Never recalculate or invent amounts, names, dates or places.
+- Structure: (1) a one-line friendly opener, (2) a short recap of the bills: title, amount and who paid, (3) the final settle-up with one line per transfer, like "Arbaz pays me 120", (4) a short friendly closing line asking everyone to pay up and confirm once done.
+- If there are no transfers, say everyone is already square and thank them.
+- Plain text only. No markdown and no asterisks. Use at most 3 emojis.
+- Keep it under 170 words. English only.
+- Write the currency symbol directly before every amount, with thousands separators.
+`;
+
+export const generateSettleMessage = onCall<GenerateSettleMessageData>({
+  cors: true,
+  secrets: ["GEMINI_API_KEY"],
+  timeoutSeconds: 60,
+}, async (request) => {
+  const geminiKey = process.env.GEMINI_API_KEY;
+  if (!geminiKey) {
+    throw new HttpsError("failed-precondition", "Gemini API key is not configured in Secret Manager.");
+  }
+
+  const d = request.data || {};
+  const bills = (Array.isArray(d.bills) ? d.bills : []).slice(0, 50);
+  const transfers = (Array.isArray(d.transfers) ? d.transfers : []).slice(0, 50);
+
+  if (bills.length === 0 && transfers.length === 0) {
+    throw new HttpsError("invalid-argument", "Nothing to summarise.");
+  }
+
+  const clean = (v: any) => String(v ?? "").trim().slice(0, 80);
+  const total = bills.reduce((sum, b) => sum + (Number(b.amount) || 0), 0);
+
+  const payload = {
+    settledOn: clean(d.settledOn),
+    currencySymbol: clean(d.currencySymbol).slice(0, 4),
+    people: (Array.isArray(d.people) ? d.people : []).map(clean).slice(0, 30),
+    totalSpent: Math.round(total * 100) / 100,
+    bills: bills.map((b) => ({
+      title: clean(b.title),
+      amount: Number(b.amount) || 0,
+      paidBy: clean(b.paidBy),
+      date: clean(b.date),
+    })),
+    transfers: transfers.map((t) => ({
+      from: clean(t.from),
+      to: clean(t.to),
+      amount: Number(t.amount) || 0,
+    })),
+  };
+
+  try {
+    const response = await axios.post(
+        `${GEMINI_BASE}/models/${GEMINI_MODEL}:generateContent`,
+        {
+          systemInstruction: {parts: [{text: SETTLE_MESSAGE_INSTRUCTIONS}]},
+          contents: [{role: "user", parts: [{text: JSON.stringify(payload)}]}],
+          generationConfig: {temperature: 0.7},
+        },
+        {
+          headers: {"x-goog-api-key": geminiKey, "Content-Type": "application/json"},
+          timeout: 45000,
+        }
+    );
+
+    const parts = response.data?.candidates?.[0]?.content?.parts || [];
+    const message = parts.map((p: any) => p.text || "").join("").replace(/\*\*/g, "").trim();
+
+    if (!message) {
+      throw new Error("Gemini returned an empty message.");
+    }
+
+    return {success: true, message};
+  } catch (error: any) {
+    logger.error("Gemini settle message failed", {
+      status: error?.response?.status,
+      data: error?.response?.data,
+      message: error?.message,
+    });
+    throw new HttpsError("internal", error?.response?.data?.error?.message || error?.message || "Message failed.");
   }
 });

@@ -23,3 +23,12 @@ data class SplitTransfer(
     val to: String,
     val amount: Double
 )
+
+/** One settle-up that was marked as settled: the people, the bills that went into it and the payments that closed it. */
+data class SettledRecord(
+    val id: String,
+    val settledOn: LocalDate = LocalDate.now(),
+    val people: List<String>,
+    val bills: List<SplitBill>,
+    val transfers: List<SplitTransfer>
+)

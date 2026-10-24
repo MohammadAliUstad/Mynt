@@ -1,5 +1,8 @@
 package com.yugentech.mynt
 
+import com.yugentech.mynt.ui.shared.components.hero.LocalHomeCardPreferences
+import com.yugentech.mynt.ui.shared.components.hero.HomeCardPreferences
+import androidx.compose.runtime.remember
 import android.graphics.Color
 import android.os.Bundle
 import androidx.activity.ComponentActivity
@@ -62,6 +65,14 @@ class MainActivity : ComponentActivity() {
 
             val settingsViewModel: SettingsViewModel = koinViewModel()
             val settings by settingsViewModel.settingsConfiguration.collectAsStateWithLifecycle()
+            val homeCardPreferences = remember(settings.cardAnimationStyle, settings.hiddenHeroCards, settingsViewModel) {
+                HomeCardPreferences(
+                    animationStyle = settings.cardAnimationStyle,
+                    onAnimationStyleChange = settingsViewModel::setCardAnimationStyle,
+                    hiddenCards = settings.hiddenHeroCards,
+                    onCardVisibleChange = settingsViewModel::setHeroCardVisible
+                )
+            }
 
             enableEdgeToEdge(
                 statusBarStyle = if (darkTheme) {
@@ -79,7 +90,10 @@ class MainActivity : ComponentActivity() {
             MyntTheme(
                 themeConfiguration = themeConfiguration
             ) {
-                CompositionLocalProvider(LocalCurrencySymbol provides settings.currencySymbol) {
+                CompositionLocalProvider(
+                    LocalCurrencySymbol provides settings.currencySymbol,
+                    LocalHomeCardPreferences provides homeCardPreferences
+                ) {
                     Surface(
                         modifier = Modifier.fillMaxSize(),
                         color = MaterialTheme.colorScheme.background

@@ -16,6 +16,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import org.koin.core.component.KoinComponent
 import org.koin.core.component.inject
+import timber.log.Timber
 
 private val standardMessages = listOf(
     "Logged today's spending yet? It takes a few seconds by voice.",
@@ -38,8 +39,15 @@ class ReminderReceiver : BroadcastReceiver(), KoinComponent {
 
     override fun onReceive(context: Context, intent: Intent) {
         when (intent.action) {
-            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> rearm(context)
-            else -> show(context, intent.getBooleanExtra(ReminderScheduler.EXTRA_PLAYFUL, false))
+            Intent.ACTION_BOOT_COMPLETED, Intent.ACTION_MY_PACKAGE_REPLACED -> {
+                Timber.d("System event received (${intent.action}): re-arming reminders")
+                rearm(context)
+            }
+            else -> {
+                Timber.d("Reminder alarm triggered, showing notification")
+                show(context, intent.getBooleanExtra(ReminderScheduler.EXTRA_PLAYFUL, false))
+                rearm(context)
+            }
         }
     }
 

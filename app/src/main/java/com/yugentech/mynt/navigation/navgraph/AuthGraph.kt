@@ -15,25 +15,21 @@ import timber.log.Timber
 fun NavGraphBuilder.authGraph(
     navController: NavHostController,
     authViewModel: AuthViewModel,
+    webClientId: String,
     context: Context
 ) {
-    // TODO: Firebase isn't wired in yet, so every way in just opens the app. Swap these for
-    //  authViewModel.signIn / signUp / getGoogleSignInIntent(webClientId) once it is.
-    val openApp: () -> Unit = {
-        navController.navigate(AppScreen.Main.route) {
-            popUpTo(0) { inclusive = true }
-            launchSingleTop = true
-        }
-    }
-
     composable(AppScreen.SignIn.route) {
         Timber.v("Composing SignIn Screen")
         BackHandler { (context as? Activity)?.finish() }
 
         SignInScreen(
             authViewModel = authViewModel,
-            onSignIn = { _, _ -> openApp() },
-            onGoogleSignIn = openApp,
+            onSignIn = { email, password ->
+                authViewModel.signIn(email, password)
+            },
+            onGoogleSignIn = {
+                authViewModel.getGoogleSignInIntent(webClientId)
+            },
             onNavigateToSignUp = {
                 navController.navigate(AppScreen.SignUp.route) {
                     launchSingleTop = true
@@ -51,8 +47,12 @@ fun NavGraphBuilder.authGraph(
 
         SignUpScreen(
             authViewModel = authViewModel,
-            onSignUp = { _, _, _ -> openApp() },
-            onGoogleSignIn = openApp,
+            onSignUp = { name, email, password ->
+                authViewModel.signUp(name, email, password)
+            },
+            onGoogleSignIn = {
+                authViewModel.getGoogleSignInIntent(webClientId)
+            },
             onNavigateToSignIn = {
                 navController.popBackStack()
             }

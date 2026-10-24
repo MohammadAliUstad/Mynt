@@ -32,7 +32,7 @@ android {
 
         // Web (client_type 3) OAuth client from google-services.json; override in local.properties.
         val webClientId = localProperties.getProperty("WEB_CLIENT_ID")
-            ?: "753392886200-ckrdo9pd1k1ia7n0qvve8d56kb3til6b.apps.googleusercontent.com"
+            ?: "868428671041-a735bj3nnu6n98habaer66fkqgbis56f.apps.googleusercontent.com"
         buildConfigField("String", "WEB_CLIENT_ID", "\"$webClientId\"")
     }
 
@@ -99,9 +99,10 @@ dependencies {
     implementation(libs.koin.androidx.compose)
     implementation(libs.timber)
 
-    // Firebase Auth & Functions (voice transcription) + Google Sign-In
+    // Firebase Auth, Firestore & Functions (voice transcription) + Google Sign-In
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
+    implementation(libs.firebase.firestore)
     implementation(libs.firebase.functions)
     implementation(libs.play.services.auth)
 

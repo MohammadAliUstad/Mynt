@@ -1,9 +1,11 @@
+// VoiceModule.kt
 package com.yugentech.mynt.di.modules.finance
 
 import com.yugentech.mynt.voice.recorder.AndroidAudioRecorder
 import com.yugentech.mynt.voice.repository.VoiceRepository
 import com.yugentech.mynt.voice.repository.VoiceRepositoryImpl
 import com.yugentech.mynt.voice.service.VoiceService
+import com.yugentech.mynt.voice.tts.TextToSpeechHelper
 import com.yugentech.mynt.voice.viewmodel.VoiceViewModel
 import org.koin.android.ext.koin.androidContext
 import org.koin.core.module.dsl.viewModel
@@ -30,10 +32,18 @@ val voiceModule = module {
         )
     }
 
+    // Text to Speech helper for clarification prompts
+    factory {
+        TextToSpeechHelper(
+            context = androidContext()
+        )
+    }
+
     viewModel {
         VoiceViewModel(
             voiceRepository = get(),
-            audioRecorder = get()
+            audioRecorder = get(),
+            textToSpeechHelper = get()
         )
     }
 }

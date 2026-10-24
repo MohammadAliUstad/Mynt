@@ -125,16 +125,31 @@ fun ProfileScreen(
         ActivityResultContracts.RequestPermission()
     ) { granted ->
         settingsViewModel.setNotificationsEnabled(granted)
-        if (!granted) onShowMessage("Notifications are off. You can allow them in system settings.")
+        if (granted) {
+            settingsViewModel.setDailyReminderEnabled(true)
+        } else {
+            onShowMessage("Notifications are off. You can allow them in system settings.")
+        }
     }
 
-    fun enableNotifications(enabled: Boolean) {
+    fun enableNotifications(enabled: Boolean, onGranted: () -> Unit = {}) {
         val needsPermission = enabled && Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU &&
             ContextCompat.checkSelfPermission(context, Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED
         if (needsPermission) {
             notificationPermission.launch(Manifest.permission.POST_NOTIFICATIONS)
         } else {
             settingsViewModel.setNotificationsEnabled(enabled)
+            if (enabled) onGranted()
+        }
+    }
+
+    fun enableDailyReminder(enabled: Boolean) {
+        if (enabled) {
+            enableNotifications(true) {
+                settingsViewModel.setDailyReminderEnabled(true)
+            }
+        } else {
+            settingsViewModel.setDailyReminderEnabled(false)
         }
     }
 
@@ -262,7 +277,7 @@ fun ProfileScreen(
                 subtitle = "Let Mynt send you reminders",
                 checked = notifications.notificationsEnabled,
                 position = Position.First,
-                onCheckedChange = ::enableNotifications
+                onCheckedChange = { enableNotifications(it) }
             )
             SwitchRow(
                 icon = Icons.Rounded.Alarm,
@@ -270,10 +285,9 @@ fun ProfileScreen(
                 subtitle = "Every day at " + LocalTime.of(notifications.reminderHour, notifications.reminderMinute)
                     .format(DateTimeFormatter.ofPattern("h:mm a", Locale.getDefault())),
                 checked = notifications.dailyReminderEnabled,
-                enabled = notifications.notificationsEnabled,
                 position = Position.Middle,
-                onCheckedChange = settingsViewModel::setDailyReminderEnabled,
-                onClick = { showTimePicker = true }
+                onCheckedChange = ::enableDailyReminder,
+                onClick = { enableNotifications(true) { showTimePicker = true } }
             )
             SwitchRow(
                 icon = Icons.Rounded.AutoAwesome,
@@ -411,8 +425,10 @@ fun ProfileScreen(
             text = { TimePicker(state = state) },
             confirmButton = {
                 TextButton(onClick = {
-                    settingsViewModel.setReminderTime(state.hour, state.minute)
-                    settingsViewModel.setDailyReminderEnabled(true)
+                    enableNotifications(true) {
+                        settingsViewModel.setReminderTime(state.hour, state.minute)
+                        settingsViewModel.setDailyReminderEnabled(true)
+                    }
                     showTimePicker = false
                 }) { Text("Set") }
             },

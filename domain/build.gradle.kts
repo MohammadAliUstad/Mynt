@@ -31,4 +31,6 @@ dependencies {
     implementation(platform(libs.firebase.bom))
     implementation(libs.firebase.auth)
     implementation(libs.kotlinx.coroutines.android)
+    implementation(platform("com.google.firebase:firebase-bom:32.7.0")) // Or your current BoM version
+    implementation("com.google.firebase:firebase-firestore-ktx")
 }

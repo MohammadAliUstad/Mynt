@@ -5,11 +5,8 @@ import com.yugentech.mynt.database.model.Expense
 import com.yugentech.mynt.database.model.TransactionType
 
 fun TransactionEntity.toExpense(): Expense {
-    val transactionType = try {
-        TransactionType.valueOf(type)
-    } catch (_: IllegalArgumentException) {
-        TransactionType.EXPENSE
-    }
+    val parsedType = runCatching { TransactionType.valueOf(type) }
+        .getOrDefault(TransactionType.EXPENSE)
 
     return Expense(
         id = id,
@@ -18,8 +15,9 @@ fun TransactionEntity.toExpense(): Expense {
         category = category,
         date = date,
         monthYear = monthYear,
-        type = transactionType,
+        type = parsedType,
         personName = personName,
+        note = note,
         timestamp = timestamp
     )
 }
@@ -34,6 +32,7 @@ fun Expense.toEntity(): TransactionEntity {
         monthYear = monthYear,
         type = type.name,
         personName = personName,
+        note = note,
         timestamp = timestamp
     )
 }

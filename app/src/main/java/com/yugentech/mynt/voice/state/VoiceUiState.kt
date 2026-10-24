@@ -9,9 +9,13 @@ data class VoiceUiState(
     val error: String? = null,
     val parsedResults: List<ParsedVoiceResult> = emptyList(),
     /** Seconds since recording started, for the timer under the orb. */
-    val elapsedSeconds: Int = 0
+    val elapsedSeconds: Int = 0,
+    /** The question asked by the AI when information is missing from the spoken split details. */
+    val clarificationPrompt: String? = null,
+    /** Optional quick-tap choices derived from the AI prompt */
+    val clarificationOptions: List<String> = emptyList()
 ) {
     /** Transcribed but nothing usable came out of it. */
     val heardNothingUseful: Boolean
-        get() = !isRecording && !isProcessing && transcript.isNotBlank() && parsedResults.isEmpty()
+        get() = !isRecording && !isProcessing && transcript.isNotBlank() && parsedResults.isEmpty() && clarificationPrompt == null
 }

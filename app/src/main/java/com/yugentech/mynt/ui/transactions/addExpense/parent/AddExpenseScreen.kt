@@ -76,6 +76,7 @@ import androidx.compose.ui.focus.FocusRequester
 import androidx.compose.ui.focus.focusRequester
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.text.font.FontStyle
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.input.ImeAction
 import androidx.compose.ui.text.input.KeyboardCapitalization
@@ -93,6 +94,7 @@ import com.yugentech.mynt.database.model.incomeCategories
 import com.yugentech.mynt.transactions.insights.TransactionDates
 import com.yugentech.mynt.transactions.insights.localDate
 import com.yugentech.mynt.transactions.insights.onDate
+import com.yugentech.mynt.ui.shared.components.MyntCard
 import com.yugentech.mynt.ui.shared.util.FinanceColors
 import com.yugentech.mynt.ui.shared.util.LocalCurrencySymbol
 import com.yugentech.mynt.ui.shared.util.categoryStyle
@@ -142,6 +144,7 @@ fun AddExpenseScreen(
         )
     }
     var person by rememberSaveable { mutableStateOf(existing?.personName ?: "") }
+    var note by rememberSaveable { mutableStateOf(existing?.note ?: "") }
     var category by rememberSaveable { mutableStateOf(existing?.category ?: defaultCategory(initialType)) }
     var date by rememberSaveable { mutableStateOf(existing?.localDate ?: TransactionDates.today()) }
     var error by remember { mutableStateOf<String?>(null) }
@@ -188,7 +191,8 @@ fun AddExpenseScreen(
                         amount = amount,
                         category = finalCategory,
                         type = type,
-                        personName = if (isPersonType) cleanPerson else ""
+                        personName = if (isPersonType) cleanPerson else "",
+                        note = note.trim()
                     ).onDate(date)
                 )
             }
@@ -318,7 +322,7 @@ fun AddExpenseScreen(
                 value = title,
                 onValueChange = { title = it },
                 placeholder = when (type) {
-                    TransactionType.EXPENSE -> "Lunch with the team"
+                    TransactionType.EXPENSE -> "Chair, Coffee, Lunch…"
                     TransactionType.INCOME -> "October salary"
                     else -> "Dinner split, rent share…"
                 },
@@ -386,6 +390,28 @@ fun AddExpenseScreen(
                     },
                     shape = CircleShape
                 )
+            }
+
+            // AI Context Sentence in the void space below "When"
+            if (note.isNotBlank()) {
+                Spacer(Modifier.height(28.dp))
+                MyntCard(
+                    modifier = Modifier.fillMaxWidth(),
+                    color = MaterialTheme.colorScheme.surfaceContainerLow,
+                    shape = RoundedCornerShape(22.dp),
+                    contentPadding = 18.dp
+                ) {
+                    Text(
+                        text = "“${note.trim()}”",
+                        style = MaterialTheme.typography.bodyMedium.copy(
+                            fontStyle = FontStyle.Italic,
+                            fontWeight = FontWeight.Medium
+                        ),
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                        textAlign = TextAlign.Center,
+                        modifier = Modifier.fillMaxWidth()
+                    )
+                }
             }
 
             AnimatedVisibility(visible = error != null) {
@@ -527,7 +553,6 @@ private fun AmountInput(
     val textStyle = MaterialTheme.typography.displayMedium.copy(
         fontWeight = FontWeight.Bold,
         color = color,
-        textAlign = TextAlign.Center,
         fontSize = if (value.length > 8) 40.sp else 52.sp
     )
     Row(
@@ -540,22 +565,26 @@ private fun AmountInput(
             style = textStyle.copy(fontSize = 32.sp, color = color.copy(alpha = 0.7f))
         )
         Spacer(Modifier.width(6.dp))
-        Box(modifier = Modifier.width(IntrinsicSize.Min).widthIn(min = 60.dp)) {
-            if (value.isEmpty()) {
-                Text("0", style = textStyle.copy(color = color.copy(alpha = 0.35f)))
+        BasicTextField(
+            value = value,
+            onValueChange = onValueChange,
+            textStyle = textStyle,
+            singleLine = true,
+            cursorBrush = SolidColor(color),
+            keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
+            modifier = Modifier
+                .width(IntrinsicSize.Min)
+                .widthIn(min = 40.dp)
+                .focusRequester(focusRequester),
+            decorationBox = { innerTextField ->
+                Box(contentAlignment = Alignment.CenterStart) {
+                    if (value.isEmpty()) {
+                        Text("0", style = textStyle.copy(color = color.copy(alpha = 0.35f)))
+                    }
+                    innerTextField()
+                }
             }
-            BasicTextField(
-                value = value,
-                onValueChange = onValueChange,
-                textStyle = textStyle,
-                singleLine = true,
-                cursorBrush = SolidColor(color),
-                keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Decimal, imeAction = ImeAction.Next),
-                modifier = Modifier
-                    .widthIn(min = 60.dp)
-                    .focusRequester(focusRequester)
-            )
-        }
+        )
     }
 }
 

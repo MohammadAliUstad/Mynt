@@ -63,6 +63,9 @@ import dev.chrisbanes.haze.HazeState
 import dev.chrisbanes.haze.HazeStyle
 import dev.chrisbanes.haze.HazeTint
 import dev.chrisbanes.haze.hazeEffect
+import androidx.compose.animation.scaleIn
+import androidx.compose.animation.scaleOut
+import androidx.compose.material.icons.rounded.DeleteOutline
 
 // Pill sizing, as on Amatyaa: oval ends, a fixed cell per tab so the indicator math stays exact.
 private val PillHeight = 72.dp
@@ -104,7 +107,9 @@ fun FloatingBottomBar(
     modifier: Modifier = Modifier,
     splitMode: Boolean = false,
     splitLabel: String = "Split",
-    onSplitClick: () -> Unit = {}
+    onSplitClick: () -> Unit = {},
+    deleteMode: Boolean = false,
+    onDeleteClick: () -> Unit = {}
 ) {
     Box(
         modifier = modifier
@@ -127,7 +132,11 @@ fun FloatingBottomBar(
                 onSplitClick = onSplitClick
             )
 
-            VoiceOrbButton(onClick = onVoiceClick)
+            VoiceOrbButton(
+                onClick = onVoiceClick,
+                deleteMode = deleteMode,
+                onDeleteClick = onDeleteClick
+            )
         }
     }
 }
@@ -317,11 +326,15 @@ private fun TabIcon(
 }
 
 /**
- * The orb, laid out at the pill's height so it never pushes the bar around, but drawn
- * larger than its slot so its glow spills over the edges as on Amatyaa.
+ * The orb, laid out at the pill's height so it never pushes the bar around.
+ * In [deleteMode] it turns into a red delete button.
  */
 @Composable
-private fun VoiceOrbButton(onClick: () -> Unit) {
+private fun VoiceOrbButton(
+    onClick: () -> Unit,
+    deleteMode: Boolean,
+    onDeleteClick: () -> Unit
+) {
     val interactionSource = remember { MutableInteractionSource() }
     val isPressed by interactionSource.collectIsPressedAsState()
     val pressScale by animateFloatAsState(
@@ -335,28 +348,57 @@ private fun VoiceOrbButton(onClick: () -> Unit) {
             .size(PillHeight)
             .semantics(mergeDescendants = true) {
                 role = Role.Button
-                contentDescription = "Add by voice"
+                contentDescription = if (deleteMode) "Delete selected settle-up" else "Add by voice"
             }
             .clickable(
                 interactionSource = interactionSource,
                 indication = null,
-                onClick = onClick
+                onClick = if (deleteMode) onDeleteClick else onClick
             ),
         contentAlignment = Alignment.Center
     ) {
-        Box(
-            modifier = Modifier
-                .size(PillHeight + 60.dp)
-                .scale(pressScale),
-            contentAlignment = Alignment.Center
-        ) {
-            OrbEnergy(modifier = Modifier.fillMaxSize())
-            Icon(
-                imageVector = Icons.Rounded.Mic,
-                contentDescription = null,
-                tint = Color.White.copy(alpha = 0.92f),
-                modifier = Modifier.size(24.dp)
-            )
+        AnimatedContent(
+            targetState = deleteMode,
+            transitionSpec = {
+                (fadeIn(tween(220)) + scaleIn(tween(260, easing = FastOutSlowInEasing), initialScale = 0.6f)) togetherWith
+                        (fadeOut(tween(160)) + scaleOut(tween(200), targetScale = 0.6f)) using
+                        SizeTransform(clip = false)
+            },
+            contentAlignment = Alignment.Center,
+            label = "orbOrDelete"
+        ) { isDelete ->
+            if (isDelete) {
+                Box(
+                    modifier = Modifier
+                        .size(PillHeight - 8.dp)
+                        .scale(pressScale)
+                        .clip(CircleShape)
+                        .background(MaterialTheme.colorScheme.error),
+                    contentAlignment = Alignment.Center
+                ) {
+                    Icon(
+                        imageVector = Icons.Rounded.DeleteOutline,
+                        contentDescription = null,
+                        tint = MaterialTheme.colorScheme.onError,
+                        modifier = Modifier.size(28.dp)
+                    )
+                }
+            } else {
+                Box(
+                    modifier = Modifier
+                        .size(PillHeight + 60.dp)
+                        .scale(pressScale),
+                    contentAlignment = Alignment.Center
+                ) {
+                    OrbEnergy(modifier = Modifier.fillMaxSize())
+                    Icon(
+                        imageVector = Icons.Rounded.Mic,
+                        contentDescription = null,
+                        tint = Color.White.copy(alpha = 0.92f),
+                        modifier = Modifier.size(24.dp)
+                    )
+                }
+            }
         }
     }
 }

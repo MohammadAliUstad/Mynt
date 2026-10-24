@@ -1,20 +1,20 @@
 {
   "project_info": {
-    "project_number": "753392886200",
-    "project_id": "expensetracker-218a5",
-    "storage_bucket": "expensetracker-218a5.firebasestorage.app"
+    "project_number": "868428671041",
+    "project_id": "mynt-62613",
+    "storage_bucket": "mynt-62613.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:753392886200:android:9a5e7fe5b4efb7b892ef4d",
+        "mobilesdk_app_id": "1:868428671041:android:35e1846d21856976d53ec0",
         "android_client_info": {
           "package_name": "com.yugentech.mynt"
         }
       },
       "oauth_client": [
         {
-          "client_id": "753392886200-3v865dqgtn1959pr19vr9ctkp4fkd628.apps.googleusercontent.com",
+          "client_id": "868428671041-vn2ngt4l24ucjgcb5qbi9005kgudoces.apps.googleusercontent.com",
           "client_type": 1,
           "android_info": {
             "package_name": "com.yugentech.mynt",
@@ -22,20 +22,20 @@
           }
         },
         {
-          "client_id": "753392886200-ckrdo9pd1k1ia7n0qvve8d56kb3til6b.apps.googleusercontent.com",
+          "client_id": "868428671041-a735bj3nnu6n98habaer66fkqgbis56f.apps.googleusercontent.com",
           "client_type": 3
         }
       ],
       "api_key": [
         {
-          "current_key": "AIzaSyBXO9yXdui5yqsrEGoO9kcwM4QghzzWJSw"
+          "current_key": "AIzaSyDVmf0kHun2SQgPHy2NSBSLwdu_1udd5bs"
         }
       ],
       "services": {
         "appinvite_service": {
           "other_platform_oauth_client": [
             {
-              "client_id": "753392886200-ckrdo9pd1k1ia7n0qvve8d56kb3til6b.apps.googleusercontent.com",
+              "client_id": "868428671041-a735bj3nnu6n98habaer66fkqgbis56f.apps.googleusercontent.com",
               "client_type": 3
             }
           ]
